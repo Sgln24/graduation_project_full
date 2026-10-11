@@ -15,6 +15,57 @@
 
 ![Demo](demo.gif)
 
+## About this fork
+
+This repository builds on [NimaZahedi's Slide-Video-Lecture-Analysis-Toolkit](https://github.com/NimaZahedi/Slide-Video-Lecture-Analysis-Toolkit), which is itself based on [travisseng/svla-toolkit](https://github.com/travisseng/svla-toolkit). The sections below distinguish early fixes needed to run the inherited project from fixes and development added later in this repository.
+
+Compared with the shared base commit `94750bc`, this repository had **190 commits not present in its parent fork's shared history**, as of `3222940` (72 files changed, with 18,828 additions and 1,513 deletions). This count includes maintenance and iterative fixes; it is not a count of 190 separate features. The initial compatibility work below is part of that total.
+
+### Initial fixes to the inherited project
+
+The first changes addressed compatibility and runtime problems in the code inherited by this fork:
+
+- Updated Gemini and PySceneDetect integration, and adapted FastAPI/Starlette template responses to the installed API.
+- Fixed Gemini credential initialization for Colab Secrets and local environment variables.
+- Made Whisper device selection account for the available hardware instead of assuming a GPU.
+- Corrected runtime paths and GPU assumptions across video, scene, OCR, transcript, embedding, and export processing.
+- Updated dependencies and addressed early performance, security, and compatibility issues.
+
+These are the changes specifically described as fixes to the inherited project. Later fixes listed below address problems encountered or introduced while developing this fork; they should not be read as claims about bugs in the original project.
+
+### Recent fixes in this repository
+
+- Preserve existing chapters when chapter generation fails, and recover from malformed model-generated JSON before accepting or saving a result.
+- Avoid losing transcript work during speaker processing; show transcription progress and allow users to stop or browse other saved transcripts.
+- Prevent outdated OCR controls from appearing and keep the primary and optional OCR passes in the correct order.
+- Keep transcript translations, chapter titles, timeline labels, and export suggestions consistent with the selected video and language.
+- Improve saved-video loading, Unicode handling, export media paths, section titles, and generated filenames.
+- Group sections around genuine topic changes without imposing an arbitrary section-count limit.
+
+### Improvements over the inherited project
+
+- More observable and recoverable processing: clearer progress, retries for recoverable failures, and controls to stop or resume browsing while work continues.
+- More flexible slide analysis: configurable detection modes and detail, diagnostics, optional OCR, and slide-aware navigation.
+- More useful course exports: selectable grouping and formats, sentence-aware boundaries, persistent export jobs, progress reporting, and saved-export links.
+- A more adaptable interface with a compact responsive layout, resizable panels, collapsible options, and synchronized transcript, chapter, slide, and timeline navigation.
+
+### Model and provider changes
+
+- Added Groq and OpenAI fallbacks for chapter generation and translation, with explicit model choices where supported.
+- Added hosted transcription choices alongside local Whisper, and selected local Whisper settings based on available hardware.
+- Updated model compatibility as providers changed their APIs and retired models; automatic Gemini fallbacks now use Gemini 3.5 Flash-Lite rather than retired Gemini 2.5 models.
+- Added fallback handling for provider quotas and temporary unavailability. Provider outages or exhausted quotas can still prevent AI work.
+
+### New capabilities added in this fork
+
+- Upload, translate, regenerate, select, and retain versions of transcripts.
+- Generate transcript-language chapters with topic sections, summaries, and optional slide titles.
+- Detect slides independently of transcript generation; run OCR, download slide images, and export OCR text.
+- Identify speakers without retranscribing, with controls and progress for speaker detection.
+- Create grouped HTML, Word, PDF, SCORM, transcript, and media exports, and retain completed exports for later viewing or download.
+
+**In short:** this fork aims to be a more practical end-to-end lecture workflow: it addresses early environment compatibility, gives users more control over analysis, helps preserve work when processing fails, and connects transcripts, translations, chapters, slides, and exports in one interface.
+
 ### Key Features
 
 - **Scene Detection**: Content-cut detection by default, plus adaptive slide detection with configurable detail, duration, duplicate filtering, hourly limits, and optional transcript chapter boundaries
