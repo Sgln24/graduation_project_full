@@ -12,6 +12,7 @@ import { processVideo, checkYoloStatus, processVideoUpload, loadUploadedVideo, d
 import { elements } from './elements.js';
 import { initInteractiveLayer } from './interactive-layer.js';
 import { initTranscriptVersions } from './transcript-versions.js';
+import { initCaptionExport } from './caption-export.js';
 
 // Global state
 export const state = {
@@ -467,6 +468,7 @@ function initApp() {
     });
     document.addEventListener('transcriptUpdated', () => void refreshSavedExports());
     initTranscriptVersions();
+    initCaptionExport();
     document.addEventListener('chaptersUpdated', () => void refreshSavedExports());
     bind(document.getElementById('refreshSavedExportsBtn'), 'click', refreshSavedExports);
     bind(elements.regenerateTranscriptBtn, 'click', () => regenerateTranscript());

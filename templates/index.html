@@ -276,6 +276,12 @@
                                 </select>
                                 <small id="translationModelStatus">Checking configured translation models...</small>
                                 <button id="translateTranscriptBtn" class="btn btn-secondary" type="button" disabled>Translate transcript</button>
+                                <small id="captionTranscriptLabel">Caption source: the current transcript or translation</small>
+                                <button id="exportCaptionedVideoBtn" class="btn btn-secondary" type="button">Create video copy with burned-in captions</button>
+                                <button id="downloadCaptionSrtBtn" class="btn btn-secondary" type="button">Download current transcript as SRT</button>
+                                <button id="downloadCaptionVttBtn" class="btn btn-secondary" type="button">Download current transcript as WebVTT</button>
+                                <small>Uses the transcript or translation currently selected on screen. Choose a saved version before opening these options. Captions are permanently visible in the MP4 copy; the original stays unchanged. Encoding a long video can take several minutes. You may close this dialog while it runs.</small>
+                                <div id="captionVideoProgress" role="status" aria-live="polite"></div>
                             </div>
                             <div class="dialog-actions">
                                 <button class="btn btn-secondary" type="submit" value="cancel">Cancel</button>

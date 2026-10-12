@@ -39,6 +39,7 @@ from dotenv import load_dotenv
 from export_jobs import ExportJobStore, export_workspace, cleanup_export_workspace
 from starlette.background import BackgroundTask
 from ffmpeg_tools import media_executable
+from caption_exports import validate_captions, render_captioned_video, video_duration, caption_text, caption_filename
 
 from project_paths import STATIC_DIR, VIDEO_DIR, TRANSCRIPTS_DIR, SCENES_DIR, THUMBNAILS_DIR, FULLSIZE_IMAGES_DIR, SUMMARIES_DIR, EXPORTS_DIR, DETECTIONS_DIR, OCR_RESULTS_DIR, ensure_app_directories
 
@@ -1934,6 +1935,55 @@ def collapse_word_heading(paragraph):
     paragraph_properties.append(OxmlElement("w:collapsed"))
 
 export_jobs = ExportJobStore(EXPORTS_DIR / "jobs")
+
+
+@app.post("/caption_file/{video_id}/{format}")
+async def download_caption_file(video_id: str, format: str, request: Request):
+    if format not in {"srt", "vtt"}:
+        raise HTTPException(status_code=400, detail="Caption format must be srt or vtt")
+    video_path = video_processor.get_video_path(video_id)
+    if not video_path:
+        raise HTTPException(status_code=404, detail="Video not found")
+    options = await request.json()
+    if not isinstance(options, dict):
+        raise HTTPException(status_code=400, detail="Caption options must be an object")
+    try:
+        captions = validate_captions(options.get("transcript"))
+        content = caption_text(captions, await video_duration(video_path), format)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    from urllib.parse import quote
+    name = caption_filename(str(options.get("filename") or "video")[:150]) + f".{format}"
+    return StreamingResponse(
+        iter([content.encode("utf-8")]),
+        media_type="text/vtt" if format == "vtt" else "application/x-subrip",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"},
+    )
+
+
+@app.post("/caption_video_jobs/{video_id}")
+async def start_caption_video_job(video_id: str, request: Request):
+    video_path = video_processor.get_video_path(video_id)
+    if not video_path:
+        raise HTTPException(status_code=404, detail="Video not found")
+    options = await request.json()
+    if not isinstance(options, dict):
+        raise HTTPException(status_code=400, detail="Caption export options must be an object")
+    try:
+        captions = validate_captions(options.get("transcript"))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    label = str(options.get("transcript_label") or "Selected transcript")[:200]
+    filename = str(options.get("filename") or "video")[:150]
+
+    async def generate(video_id, options, step, artifacts, workspace):
+        step(f"Caption source: {label}")
+        return await render_captioned_video(video_path, captions, filename, workspace, step)
+
+    job_id = export_jobs.start(video_id, {"document_title": f"Captioned video - {label}"}, generate)
+    return {"success": True, "job_id": job_id, "status_url": f"/export_jobs/{job_id}/status"}
 
 
 @app.post("/export_chapters/{video_id}")

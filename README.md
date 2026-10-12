@@ -82,6 +82,19 @@ These are the changes specifically described as fixes to the inherited project. 
   chapters and sections; this does not detect slides, run OCR, or regenerate chapters.
 - **Dual OCR Systems**: Run Start Slide OCR first to read detected text with Tesseract. Once that pass completes with readable results and no pending or failed text elements, Process with Surya OCR becomes available as an optional additional pass.
 - **Multi-Source Transcription**: YouTube transcript extraction and Whisper-based speech recognition
+- **Burned-in Caption Video**: Select a transcript or translation from the saved
+  versions, then open **Transcript options > Create video copy with burned-in
+  captions**. The current transcript is captured when you click, so later version
+  changes do not alter the export. Download the full captioned MP4 from that dialog
+  or **Saved exports**. Jobs and completed downloads remain available after a page
+  reload; a server restart interrupts unfinished encoding. The original video is
+  never overwritten. Captions use white text with a dark outline near the bottom;
+  rendering requires FFmpeg with the subtitles/libass filter and installed fonts
+  for the selected language. No transcription, translation, or AI call is made.
+  The same dialog offers **Download current transcript as SRT** and **WebVTT**,
+  using UTF-8 text and the selected version's timestamps. These files are quick
+  sidecar downloads, not burned-in video. Missing/zero cue durations extend to the
+  next distinct cue start (or video end); cues beyond the video end are excluded.
 - **Processing Controls**: Stop transcription/speaker detection and restore the
   previous transcript, or keep processing in the background while browsing saved
   transcripts. Selecting a saved version prevents progress polling from replacing it.
