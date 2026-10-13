@@ -10,6 +10,7 @@ const errors = [];
 let downloaded;
 let fail = false;
 const context = vm.createContext({
+    startElapsedTimer: () => () => {},
     state: {currentVideoId: 'lecture', videoScenes: [{}]},
     document: {getElementById: () => button},
     showError: (message) => errors.push(message),

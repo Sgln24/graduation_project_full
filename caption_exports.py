@@ -188,7 +188,7 @@ async def render_captioned_video(video_path, captions, filename, workspace, step
         media_executable("ffmpeg"), "-nostdin", "-y", "-i", str(video_path),
         "-map", "0:v:0", "-map", "0:a?",
         "-vf", caption_filter(style) + ",pad=ceil(iw/2)*2:ceil(ih/2)*2",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "superfast", "-crf", "20", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-movflags", "+faststart",
         "-progress", "pipe:1", "-nostats", str(output),
     ]
@@ -216,6 +216,54 @@ async def render_captioned_video(video_path, captions, filename, workspace, step
     if not output.is_file() or output.stat().st_size == 0:
         raise RuntimeError("FFmpeg did not produce a captioned video.")
     step("Captioned MP4 encoded; saving download")
+    return FileResponse(output, media_type="video/mp4", filename=output.name)
+
+
+async def render_selectable_captions(video_path, tracks, filename, workspace, step):
+    duration = await video_duration(video_path)
+    workspace = Path(workspace)
+    output = workspace / f"{caption_filename(filename)} caption.mp4"
+    command = [media_executable("ffmpeg"), "-nostdin", "-y", "-hide_banner",
+               "-i", str(video_path)]
+    for index, track in enumerate(tracks):
+        source = workspace / f"track-{index}.srt"
+        source.write_text(caption_text(track["captions"], duration), encoding="utf-8")
+        (workspace / f"track-{index}.vtt").write_text(
+            caption_text(track["captions"], duration, "vtt"), encoding="utf-8")
+        command.extend(["-i", str(source)])
+    command.extend(["-map", "0:v:0", "-map", "0:a?"])
+    for index in range(len(tracks)):
+        command.extend(["-map", f"{index + 1}:0"])
+    command.extend(["-c:v", "copy", "-c:a", "copy", "-c:s", "mov_text"])
+    for index, track in enumerate(tracks):
+        command.extend([
+            f"-metadata:s:s:{index}", f"language={track['language']}",
+            f"-metadata:s:s:{index}", f"title={track['label']}",
+            f"-metadata:s:s:{index}", f"handler_name={track['label']}",
+            f"-disposition:s:{index}", "default" if index == 0 else "0",
+        ])
+    command.extend(["-movflags", "+faststart", "-progress", "pipe:1", "-nostats", str(output)])
+    step("Adding selectable captions without re-encoding video or audio")
+    with (workspace / "encoder.log").open("wb") as errors:
+        process = await asyncio.create_subprocess_exec(
+            *command, stdout=asyncio.subprocess.PIPE, stderr=errors)
+        last_percent = -5
+        try:
+            while line := await process.stdout.readline():
+                key, _, value = line.decode("utf-8", errors="replace").strip().partition("=")
+                if key == "out_time_us":
+                    percent = max(0, min(99, int(int(value) / 1000000 / duration * 100)))
+                    if percent >= last_percent + 5:
+                        step(f"Adding caption tracks: {percent}%")
+                        last_percent = percent
+            returncode = await process.wait()
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+    if returncode or not output.is_file() or output.stat().st_size == 0:
+        detail = (workspace / "encoder.log").read_text(encoding="utf-8", errors="replace")[-3000:]
+        raise RuntimeError(f"Could not create MP4 caption tracks. {detail}")
     return FileResponse(output, media_type="video/mp4", filename=output.name)
 
 

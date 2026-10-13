@@ -10,6 +10,7 @@ import { updateChapters, clearChapterMarkers } from './chapters.js';
 import { checkSceneDetection, updateScenes, stopDetectionPolling } from './scenes.js';
 import { fetchOcrResults, resetOcrStatus } from './ocr.js';
 import { refreshTranscriptVersions } from './transcript-versions.js';
+import { startElapsedTimer } from './progress-time.js';
 
 // Translate backend transcript_source/active_language fields (set from the
 // persisted "active source" marker) into the state.currentTranscriptSource
@@ -173,7 +174,8 @@ function renderWhisperProgress(status, startedAt) {
     const progress = Number.isFinite(Number(status.progress))
         ? Math.max(0, Math.min(100, Number(status.progress)))
         : 0;
-    const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+    const elapsedSeconds = Number.isFinite(status.steps_elapsed) ? status.steps_elapsed
+        : Math.max(0, (Date.now() - startedAt) / 1000);
     const phase = status.phase === 'identifying_speakers'
         ? 'Identifying speakers with pyannote'
         : status.phase === 'transcribing' || progress > 0
@@ -191,13 +193,14 @@ function renderWhisperProgress(status, startedAt) {
                 </div>
                 <div class="progress-text">${Math.round(progress)}%</div>
             </div>
-            <p>${phase} (${elapsedSeconds}s elapsed).${lastUpdate}</p>
+            <p>${phase}.${lastUpdate}</p>
             ${renderTranscriptSteps(status)}
             <p>You can continue using slide detection and video controls while this runs.</p>
             <button id="stopTranscriptionBtn" type="button" class="btn btn-danger">Stop processing</button>
             <button id="browseDuringTranscriptionBtn" type="button" class="btn btn-secondary">Keep processing and view transcript</button>
         </div>
     `;
+    startElapsedTimer(elements.transcriptContainer, elapsedSeconds);
     const stop = document.getElementById('stopTranscriptionBtn');
     if (stop) stop.onclick = async () => {
         stop.disabled = true;
@@ -1352,6 +1355,7 @@ export async function detectScenes() {
     document.getElementById('processSuryaBtn')?.remove();
     resetOcrStatus();
     elements.scenesContainer.innerHTML = '<p>Detecting scene changes...</p><p class="scene-progress-status"><i class="fas fa-spinner fa-spin"></i> Analysis is running...</p>';
+    const stopElapsed = startElapsedTimer(elements.scenesContainer);
     try {
         const response = await fetch(`/detect_scenes/${videoId}`, {
             method: 'POST',
@@ -1381,6 +1385,8 @@ export async function detectScenes() {
         showError(`Error detecting scenes: ${error.message}`);
         button.disabled = false;
         button.innerHTML = '<i class="fas fa-film"></i> Detect Slides';
+    } finally {
+        stopElapsed();
     }
 }
 

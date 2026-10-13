@@ -1262,6 +1262,24 @@ body .search-highlight.active {
     }
 }
 
+.progress-elapsed {
+    display: block;
+    font-size: 11px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--text-2);
+}
+
+.btn .progress-elapsed {
+    color: inherit;
+}
+
+.btn.btn-icon:has(> .progress-elapsed) {
+    width: auto;
+    padding: 0 6px;
+}
+
 .caption-style-options {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);

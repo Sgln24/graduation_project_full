@@ -82,7 +82,7 @@ These are the changes specifically described as fixes to the inherited project. 
   chapters and sections; this does not detect slides, run OCR, or regenerate chapters.
 - **Dual OCR Systems**: Run Start Slide OCR first to read detected text with Tesseract. Once that pass completes with readable results and no pending or failed text elements, Process with Surya OCR becomes available as an optional additional pass.
 - **Multi-Source Transcription**: YouTube transcript extraction and Whisper-based speech recognition
-- **Burned-in Caption Video**: Select a transcript or translation from the saved
+- **Caption Video Copies**: Select a transcript or translation from the saved
   versions, then click **Add captions to video** in the Transcript toolbar.
   Its **Transcript for captions** dropdown uses the same saved versions; changing
   it also changes the transcript shown on screen.
@@ -96,6 +96,9 @@ These are the changes specifically described as fixes to the inherited project. 
   Below the creation controls, only the current export's progress is shown,
   followed by a **Download MP4** button when it finishes. Opening the dialog
   reconnects to an active export, without repeating old completed or failed jobs.
+  Progress and elapsed time update in place, without rebuilding the popup or
+  its saved-copy dropdown. Caption burning uses a faster software encoding
+  preset at the same resolution and CRF quality setting; copies may be larger.
   Switching videos updates the dropdown to that video's copies. Copies also remain in **Saved exports**.
   Jobs and completed downloads remain available after a page
   reload; a server restart interrupts unfinished encoding. The original video is
@@ -104,6 +107,21 @@ These are the changes specifically described as fixes to the inherited project. 
   two-letter code, for example `Lecture_DE caption.mp4` or `Lecture_EN caption.mp4`.
   The language comes from the selected translation or the existing transcript-language
   detector, without a separate language selector. Older saved copies keep their original names.
+  Choose **Selectable CC tracks (fast)** to include several saved transcripts or
+  translations in one MP4. Select the versions in **Caption tracks**; the first
+  selected version is the default track. This copies video and audio without
+  re-encoding, so it is substantially faster than permanent captions and does not
+  change picture quality. Each track has a title and language metadata. Players
+  such as VLC can switch tracks or turn them off; embedded MP4 subtitle support
+  varies between browsers and players, and appearance is controlled by the player.
+  Filenames include the selected language codes, e.g. `Lecture_EN_DE caption.mp4`.
+  **Use in editor** loads a completed copy without changing the lecture ID,
+  transcripts, chapters, slide detections or OCR. Playback position is retained.
+  The editor loads matching WebVTT tracks for selectable copies so browser playback
+  does not depend on native MP4 subtitle support. Chapter and section clips use the
+  selected video copy and retain all its embedded subtitle tracks. **Use original**
+  switches back without deleting copies or analysis. Source selection lasts until
+  you load another video or reload the page; saved copies remain available.
   Choose small/medium/large text and top/bottom positioning in that dialog.
   The default is medium white text in a black box, at the bottom.
   This dialog shows a real FFmpeg-rendered preview on the selected video's
@@ -380,6 +398,9 @@ as its title.
 Exports run in a background job with timestamped steps (clip encoding, images,
 AI summaries, document building, packaging and saving). Export and
 transcription progress show only the current step, replacing the previous one.
+Active operation progress includes elapsed time, including uploads, caption
+previews and video copies, slide downloads, summary generation and exports.
+Persisted export and transcription jobs use server timing when reconnecting.
 Saved exports include
 an **Open HTML in browser** link and a download link in the Chapters tab.
 HTML pages and their media remain under `static/exports/jobs` across app

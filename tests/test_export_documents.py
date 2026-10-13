@@ -128,6 +128,23 @@ class ExportDocumentTests(unittest.TestCase):
         self.assertEqual(" ".join(text for chunk in chunks for text in chunk),
                          " ".join(item["text"] for item in self.transcript))
 
+    def test_caption_copy_is_used_for_chapter_and_section_clips(self):
+        copy = self.directory / "caption-copy.mp4"
+        selected = []
+        def resolve(video_id, job_id):
+            selected.append((video_id, job_id))
+            return copy
+        self.functions["caption_copy_path"] = resolve
+        self.run_export(media_export_id="copy-id", include_clips=True,
+                        include_section_clips=True, subpart_mode="points")
+        self.assertEqual(selected, [("lecture", "copy-id")])
+        clips = [command for command in self.media_commands if command[-1].endswith(".mp4")]
+        self.assertGreaterEqual(len(clips), 2)
+        for command in clips:
+            self.assertEqual(command[command.index("-i") + 1], str(copy))
+            self.assertIn("0:s?", command)
+            self.assertEqual(command[command.index("-c:s") + 1], "mov_text")
+
     def test_missing_ffmpeg_clip_export_reports_installation_guidance(self):
         def unavailable(name):
             raise RuntimeError("Install FFmpeg and restart the server")

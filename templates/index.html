@@ -306,6 +306,22 @@
                                         <button id="refreshCaptionVideosBtn" class="btn btn-secondary btn-action btn-icon" type="button" title="Refresh saved captioned videos" aria-label="Refresh saved captioned videos"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
                                     </div>
                                     <small id="savedCaptionVideosStatus" role="status" aria-live="polite"></small>
+                                    <div class="dialog-actions">
+                                        <button id="useCaptionCopyBtn" class="btn btn-secondary btn-action" type="button" disabled>Use in editor</button>
+                                        <button id="restoreOriginalVideoBtn" class="btn btn-secondary btn-action" type="button">Use original</button>
+                                    </div>
+                                    <small id="captionMediaStatus" role="status" aria-live="polite"></small>
+                                    <label for="captionExportMode">Caption type</label>
+                                    <select id="captionExportMode">
+                                        <option value="burn">Permanent captions</option>
+                                        <option value="tracks">Selectable CC tracks (fast)</option>
+                                    </select>
+                                    <div id="captionTrackOptions" hidden>
+                                        <label for="captionTrackVersions">Caption tracks</label>
+                                        <select id="captionTrackVersions" multiple size="4" aria-label="Transcripts to include as caption tracks"></select>
+                                        <small>Select one or more saved transcripts. The first is the default track.</small>
+                                    </div>
+                                    <div id="captionBurnOptions">
                                     <label for="captionTranscriptVersionSelect">Transcript</label>
                                     <select id="captionTranscriptVersionSelect" aria-label="Transcript for captions"></select>
                                     <p id="captionTranscriptLabel" hidden>Caption source: the current transcript or translation</p>
@@ -332,10 +348,13 @@
                                         <p id="captionPreviewStatus" role="status" aria-live="polite"></p>
                                         <img id="captionStylePreview" class="caption-style-preview" alt="Preview of the selected burned-in caption style on the video" hidden>
                                     </fieldset>
+                                    </div>
                                     <details class="ui-disclosure">
                                         <summary>Caption help</summary>
                                         <div class="disclosure-content">
                                             <p>Creates an MP4 copy with permanent captions. Your original stays unchanged. You can close these options while encoding runs.</p>
+                                            <p>Selectable CC tracks copy the video and audio without re-encoding. Switch captions in a compatible player such as VLC; styling depends on the player.</p>
+                                            <p>Use in editor keeps transcripts, chapters and slide detections. Chapter clips use this copy and retain its caption tracks. Use original switches back.</p>
                                             <p>The preview uses the selected transcript and current video frame, or the nearest caption. Enlarge it to judge the text size.</p>
                                             <p>Long cues use two-line blocks with estimated split timing. SRT and WebVTT keep the original cues.</p>
                                         </div>

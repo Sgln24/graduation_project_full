@@ -39,7 +39,7 @@ from dotenv import load_dotenv
 from export_jobs import ExportJobStore, export_workspace, cleanup_export_workspace
 from starlette.background import BackgroundTask
 from ffmpeg_tools import media_executable
-from caption_exports import validate_captions, render_captioned_video, video_duration, caption_text, caption_filename, validate_caption_style, render_caption_preview
+from caption_exports import validate_captions, render_captioned_video, video_duration, caption_text, caption_filename, validate_caption_style, render_caption_preview, render_selectable_captions
 
 from project_paths import STATIC_DIR, VIDEO_DIR, TRANSCRIPTS_DIR, SCENES_DIR, THUMBNAILS_DIR, FULLSIZE_IMAGES_DIR, SUMMARIES_DIR, EXPORTS_DIR, DETECTIONS_DIR, OCR_RESULTS_DIR, ensure_app_directories
 
@@ -2012,6 +2012,79 @@ async def caption_preview(video_id: str, request: Request):
     return Response(image, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
+@app.post("/caption_track_jobs/{video_id}")
+async def start_caption_track_job(video_id: str, request: Request):
+    video_path = video_processor.get_video_path(video_id)
+    if not video_path:
+        raise HTTPException(status_code=404, detail="Video not found")
+    options = await request.json()
+    if not isinstance(options, dict):
+        raise HTTPException(status_code=400, detail="Caption options must be an object")
+    ids = options.get("version_ids")
+    if (not isinstance(ids, list) or not 1 <= len(ids) <= 16
+            or not all(isinstance(value, str) for value in ids) or len(set(ids)) != len(ids)):
+        raise HTTPException(status_code=400, detail="Choose between one and sixteen different transcripts")
+    tracks = []
+    language_codes = {"en": "eng", "de": "deu", "ar": "ara", "pl": "pol",
+                      "fr": "fra", "es": "spa", "it": "ita", "pt": "por",
+                      "nl": "nld", "ru": "rus", "zh": "zho", "ja": "jpn"}
+    try:
+        transcript_versions.list_versions(video_id)
+        for version_id in ids:
+            entry, transcript = transcript_versions.read_version(video_id, version_id)
+            captions = validate_captions(transcript)
+            language = entry.get("language") or detect_transcript_language(captions)
+            tracks.append({"captions": captions, "label": entry["label"],
+                           "code": language.upper(),
+                           "language": language_codes.get(language.lower(), "und")})
+    except (KeyError, FileNotFoundError, ValueError) as error:
+        raise HTTPException(status_code=400, detail="A selected transcript is missing or invalid") from error
+    codes = "_".join(dict.fromkeys(track["code"] for track in tracks))
+    filename = f"{caption_filename(options.get('filename') or 'video')[:75]}_{codes}"
+
+    async def generate(video_id, options, step, artifacts, workspace):
+        return await render_selectable_captions(video_path, tracks, filename, workspace, step)
+
+    job_id = export_jobs.start(
+        video_id, {"document_title": "Captioned video - Selectable tracks"}, generate,
+        caption_tracks=[{"label": track["label"], "language": track["language"],
+                         "code": track["code"].lower()} for track in tracks],
+    )
+    return {"success": True, "job_id": job_id, "status_url": f"/export_jobs/{job_id}/status"}
+
+
+def caption_copy_path(video_id, job_id):
+    if not isinstance(job_id, str):
+        raise HTTPException(status_code=400, detail="Invalid video copy ID")
+    job = read_export_job(job_id)
+    if (job["video_id"] != video_id or job["status"] != "complete"
+            or not job["title"].startswith("Captioned video - ")
+            or not job.get("filename", "").lower().endswith(".mp4")):
+        raise HTTPException(status_code=400, detail="Choose a completed caption copy of this video")
+    try:
+        return export_jobs.file(job_id, job["download_file"])
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Video copy is missing") from error
+
+
+@app.get("/caption_copy/{video_id}/{job_id}")
+async def stream_caption_copy(video_id: str, job_id: str, range: Optional[str] = Header(None)):
+    return await video_processor.stream_video(str(caption_copy_path(video_id, job_id)), range)
+
+
+@app.get("/caption_copy/{video_id}/{job_id}/tracks/{index}")
+async def caption_copy_track(video_id: str, job_id: str, index: int):
+    caption_copy_path(video_id, job_id)
+    job = read_export_job(job_id)
+    if index < 0 or index >= len(job.get("caption_tracks", [])):
+        raise HTTPException(status_code=404, detail="Caption track not found")
+    try:
+        path = export_jobs.file(job_id, f"track-{index}.vtt")
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=404, detail="Caption track is missing") from error
+    return FileResponse(path, media_type="text/vtt")
+
+
 @app.post("/export_chapters/{video_id}")
 async def export_chapters_endpoint(video_id: str, request: Request):
     return await export_chapters(video_id, request)
@@ -2110,7 +2183,10 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
     )}
     if not any(export_flags.values()):
         raise HTTPException(status_code=400, detail="Select at least one export option")
-    video_path = video_processor.get_video_path(video_id)
+    video_path = (str(caption_copy_path(video_id, options["media_export_id"]))
+                  if options.get("media_export_id") else video_processor.get_video_path(video_id))
+    clip_stream_options = (["-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-c:s", "mov_text"]
+                           if options.get("media_export_id") else [])
     translated_summary_path = (
         SUMMARIES_DIR / f"{video_id}_summary_{transcript_language}.json"
         if transcript_language else None
@@ -2286,7 +2362,7 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                 ]
                 if chapter["end"] is not None:
                     ffmpeg_clip.extend(["-t", str(chapter["end"] - chapter["clip_start"])])
-                ffmpeg_clip.extend(["-c:v", "libx264", "-c:a", "aac", str(clip_path)])
+                ffmpeg_clip.extend([*clip_stream_options, "-c:v", "libx264", "-c:a", "aac", str(clip_path)])
                 if export_flags["include_clips"] or export_flags["include_webpage"] or export_flags["include_scorm"]:
                     ffmpeg_clip[0] = media_executable("ffmpeg")
                     step(f"Part {number}/{len(chapter_data)}: encoding video clip with FFmpeg")
@@ -2408,7 +2484,7 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                             ]
                             if section_end is not None:
                                 command.extend(["-t", str(max(0.1, section_end - section_start))])
-                            command.extend(["-c:v", "libx264", "-c:a", "aac", str(section_clip)])
+                            command.extend([*clip_stream_options, "-c:v", "libx264", "-c:a", "aac", str(section_clip)])
                             step(f"Part {number}/{len(chapter_data)}: encoding section {number}.{subpart_index} clip")
                             subprocess.run(command, check=True)
                             subpart["clip"] = section_clip

@@ -36,13 +36,20 @@ ids.captionStylePosition.value = 'top';
 const state = { currentVideoId: 'video', currentTranscriptSource: 'translation:de',
     currentVideoFilename: 'Lecture.mp4', currentTranscript: [{start: 1, duration: 2, text: 'Gewählte Version'}] };
 const requests = [], errors = [], links = [], saves = [];
+const elapsedTimers = [];
 const context = vm.createContext({
+    startElapsedTimer: (container, elapsed = 0, running = true) => {
+        const timer = {container, elapsed, running, stopped: false};
+        elapsedTimers.push(timer);
+        return () => { timer.stopped = true; };
+    },
     state, showError: message => errors.push(message), refreshSavedExports: async () => {},
     saveBlobToUserLocation: async (blob, filename, container) => saves.push({blob, filename, container}),
     openOptionsDialog: dialog => dialog.show(),
     fetch: (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject})),
     document: {getElementById: id => ids[id], body: element(),
-        querySelector: selector => selector === 'dialog:modal' ? (ids.captionStyleDialog.open ? ids.captionStyleDialog : null) : {currentTime: 12},
+        querySelector: selector => selector === 'dialog:modal' ? (ids.captionStyleDialog.open ? ids.captionStyleDialog : null)
+            : {currentTime: 12, addEventListener() {}},
         querySelectorAll: selector => selector === 'dialog:modal'
             ? [ids.captionStyleDialog, ids.captionLargePreviewDialog].filter(dialog => dialog.open && dialog.modal)
             : [ids.captionStyleDialog, ids.transcriptDownloadDialog].filter(dialog => dialog.open),
@@ -168,6 +175,12 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     reply(requests.at(-1), {exports: [{id: 'old', title: 'Captioned video - Saved', video_id: 'other', status: 'complete', filename: 'Old.mp4', download_url: '/export_jobs/old/download'}]});
     await preserving;
     assert.equal(ids.savedCaptionVideoSelect.value, 'old', 'Refresh must preserve selected copy');
+    const savedOption = ids.savedCaptionVideoSelect.children[1];
+    const stableHistory = context.refreshSavedCaptionVideos();
+    assert.equal(ids.savedCaptionVideosStatus.textContent, '', 'Polling must not flash a loading message');
+    reply(requests.at(-1), {exports: [{id: 'old', title: 'Captioned video - Saved', video_id: 'other', status: 'complete', filename: 'Old.mp4', download_url: '/export_jobs/old/download'}]});
+    await stableHistory;
+    assert.equal(ids.savedCaptionVideoSelect.children[1], savedOption, 'Polling preserves the saved-copy option node');
     const failedDownload = ids.downloadSavedCaptionVideoBtn.listeners.click();
     requests.at(-1).resolve({ok: false, json: async () => ({detail: 'Export download not found'})});
     await failedDownload;
@@ -232,6 +245,25 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.match(ids.captionVideoProgress.children[0].textContent, /42%/);
     assert.equal(ids.captionVideoProgress.children[1].value, 42);
     assert.equal(ids.captionVideoProgress.children[1].max, 100);
+    const progressNodes = [...ids.captionVideoProgress.children];
+    const timerCount = elapsedTimers.length;
+    const unchangedRefresh = context.refreshCaptionExports();
+    assert.deepEqual(ids.captionVideoProgress.children, progressNodes, 'Polling must not blank progress while fetching');
+    reply(requests.at(-1), {exports: [running]});
+    await unchangedRefresh;
+    assert.equal(ids.captionVideoProgress.children[0], progressNodes[0], 'Polling reuses the message node');
+    assert.equal(ids.captionVideoProgress.children[1], progressNodes[1], 'Polling reuses the progress bar');
+    assert.equal(elapsedTimers.length, timerCount, 'Polling must not reset the elapsed clock');
+    const advanceRefresh = context.refreshCaptionExports();
+    reply(requests.at(-1), {exports: [{...running, steps: [{message: 'Burning captions: 47% of video encoded'}]}]});
+    await advanceRefresh;
+    assert.equal(ids.captionVideoProgress.children[1], progressNodes[1]);
+    assert.equal(progressNodes[1].value, 47, 'Progress updates in place');
+    const optionsNodes = [...ids.savedCaptionVideoSelect.children];
+    const unchangedHistory = context.refreshSavedCaptionVideos();
+    reply(requests.at(-1), {exports: []});
+    await unchangedHistory;
+    assert.equal(ids.savedCaptionVideoSelect.children[0], optionsNodes[0], 'Unchanged saved options must not be rebuilt');
     const completed = {...running, video_id: 'other', status: 'complete', filename: 'Lecture_DE caption.mp4', download_url: '/export_jobs/active-copy/download'};
     const completedRefresh = context.refreshCaptionExports();
     reply(requests.at(-1), {exports: [completed]});

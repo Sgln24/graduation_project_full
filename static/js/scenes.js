@@ -7,6 +7,7 @@ import { fetchOcrResults } from './ocr.js';
 import { showError } from './ui.js';
 import { saveBlobToUserLocation } from './utils.js';
 import { createSlideDownloadButton, setupSlideTextDownload } from './slide-downloads.js';
+import { startElapsedTimer } from './progress-time.js';
 
 // Add state variable for label visibility
 let labelsVisible = true;
@@ -139,11 +140,14 @@ export async function checkSceneDetection(videoId) {
                 fetchOcrResults(videoId);
             } else {
                 // Still processing
+                if (!state.sceneDetectionStartedAt) state.sceneDetectionStartedAt = Date.now();
                 const elapsed = state.sceneDetectionStartedAt
                     ? Math.max(1, Math.round((Date.now() - state.sceneDetectionStartedAt) / 1000))
                     : 0;
-                elements.scenesContainer.innerHTML = `<p>Detecting scene changes...</p><p class="scene-progress-status"><i class="fas fa-spinner fa-spin"></i> Analysis is running (${elapsed}s elapsed)...</p>`;
+                elements.scenesContainer.innerHTML = '<p>Detecting scene changes...</p><p class="scene-progress-status"><i class="fas fa-spinner fa-spin"></i> Analysis is running...</p>';
+                startElapsedTimer(elements.scenesContainer, elapsed);
                 elements.thumbnailTimeline.innerHTML = '<p>Generating visual timeline...</p>';
+                startElapsedTimer(elements.thumbnailTimeline, elapsed);
             }
 
         } else {
@@ -156,6 +160,7 @@ export async function checkSceneDetection(videoId) {
             state.sceneDetectionInterval = null;
         }
         elements.scenesContainer.innerHTML = `<p>Scene processing failed: ${error.message}</p><p>Please check the server log and try again.</p>`;
+        elements.thumbnailTimeline.textContent = 'Slide detection stopped.';
         elements.detectScenesBtn.disabled = false;
         elements.detectScenesBtn.innerHTML = '<i class="fas fa-film"></i> Detect Slides';
         showError(`Error checking scene detection: ${error.message}`);
@@ -171,6 +176,7 @@ export async function downloadSceneScreenshots() {
     }
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
+    const stopElapsed = startElapsedTimer(button);
     try {
         const response = await fetch(`/download_scene_screenshots/${encodeURIComponent(state.currentVideoId)}`);
         if (!response.ok) {
@@ -182,6 +188,7 @@ export async function downloadSceneScreenshots() {
     } catch (error) {
         showError(`Error downloading screenshots: ${error.message}`);
     } finally {
+        stopElapsed();
         button.disabled = state.videoScenes.length === 0;
         button.innerHTML = '<i class="fas fa-images"></i> Download Screenshots';
     }
@@ -196,6 +203,7 @@ export async function downloadSlidesPdf() {
     }
     button.disabled = true;
     button.textContent = 'Building slides PDF...';
+    const stopElapsed = startElapsedTimer(button);
     try {
         const response = await fetch(`/download_slides_pdf/${encodeURIComponent(videoId)}`);
         if (!response.ok) {
@@ -208,6 +216,7 @@ export async function downloadSlidesPdf() {
     } catch (error) {
         showError(`Error exporting slides PDF: ${error.message}`);
     } finally {
+        stopElapsed();
         button.disabled = !state.videoScenes?.length;
         button.textContent = 'Export slides as one PDF';
     }

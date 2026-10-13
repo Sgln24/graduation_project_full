@@ -1,11 +1,13 @@
 import { state } from './main.js';
 import { showError } from './ui.js';
 import { saveBlobToUserLocation } from './utils.js';
+import { startElapsedTimer } from './progress-time.js';
 
 async function saveSlideExport(url, filename, button, options) {
     const content = button.innerHTML;
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
+    const stopElapsed = startElapsedTimer(button);
     try {
         const response = await fetch(url, options);
         if (!response.ok) {
@@ -16,6 +18,7 @@ async function saveSlideExport(url, filename, button, options) {
     } catch (error) {
         if (error.name !== 'AbortError') showError(`Could not download slides: ${error.message}`);
     } finally {
+        stopElapsed();
         button.innerHTML = content;
         button.disabled = false;
         button.removeAttribute('aria-busy');

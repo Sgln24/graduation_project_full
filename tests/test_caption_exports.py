@@ -272,6 +272,9 @@ class CaptionTests(unittest.TestCase):
         FailedProcess.stdout.readline = empty_line
 
         async def start(*args, **kwargs):
+            self.assertEqual(args[args.index("-preset") + 1], "superfast")
+            self.assertEqual(args[args.index("-crf") + 1], "20")
+            self.assertEqual(args[args.index("-pix_fmt") + 1], "yuv420p")
             kwargs["stderr"].write(b"No such filter: subtitles")
             return FailedProcess()
 

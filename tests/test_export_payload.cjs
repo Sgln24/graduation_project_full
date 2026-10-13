@@ -48,6 +48,8 @@ elements.exportOptionsDialog = {
 let jobFails = false;
 const context = vm.createContext({
     elements, state, console,
+    selectedMediaExportId: () => 'caption-copy',
+    startElapsedTimer: () => () => {},
     document: {getElementById: () => null},
     showError: (message) => { if (message) errors.push(message); },
     showErrorWithActions: () => {}, showNotification: () => {},
@@ -85,6 +87,7 @@ assert.equal(elements.exportWebpage.disabled, false);
     assert.equal(payload.subpart_mode, 'points');
     assert.equal(payload.timestamp_mode, 'subpart');
     assert.equal(payload.include_webpage, true);
+    assert.equal(payload.media_export_id, 'caption-copy', 'Chapter clips must use the chosen video copy');
     for (const field of ['include_images', 'include_transcripts', 'include_clips', 'include_word', 'include_pdf']) {
         assert.equal(payload[field], false, `${field} must not be implicitly enabled by HTML`);
     }

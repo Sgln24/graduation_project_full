@@ -259,6 +259,15 @@ def _find(video_id, version_id):
     return entry
 
 
+def read_version(video_id, version_id):
+    """Read a saved transcript without changing the active analysis."""
+    entry = _find(video_id, version_id)
+    path = _versions_dir(video_id) / f"{entry['id']}.json"
+    with path.open(encoding="utf-8") as file:
+        payload = json.load(file)
+    return dict(entry), payload["transcript"]
+
+
 def activate_version(video_id, version_id):
     """Make a stored version the current transcript used by summaries and exports."""
     entry = _find(video_id, version_id)

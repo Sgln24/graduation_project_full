@@ -7,6 +7,8 @@ import { saveBlobToUserLocation } from './utils.js';
 import { conciseTitle } from './chapter-navigation.js';
 import { scrollWithinContainer } from './scroll-utils.js';
 import { createSlideDownloadButton } from './slide-downloads.js';
+import { startElapsedTimer } from './progress-time.js';
+import { selectedMediaExportId } from './caption-export.js';
 
 let chapterMarkerGeneration = 0;
 
@@ -114,11 +116,13 @@ function renderExportSteps(status) {
         message.textContent = status.error;
         container.appendChild(message);
     }
+    startElapsedTimer(container, status.elapsed || 0, status.status === 'running' || status.status === 'queued');
 }
 
 async function downloadSavedExport(item, link) {
     link.classList.add('is-loading');
     link.setAttribute('aria-busy', 'true');
+    const stopElapsed = startElapsedTimer(link);
     try {
         const response = await fetch(item.download_url);
         if (!response.ok) throw new Error(`server answered ${response.status}`);
@@ -132,6 +136,7 @@ async function downloadSavedExport(item, link) {
         if (error?.name === 'AbortError') return;
         showError(`Could not download saved export: ${error.message}`);
     } finally {
+        stopElapsed();
         link.classList.remove('is-loading');
         link.removeAttribute('aria-busy');
     }
@@ -233,6 +238,7 @@ export async function exportChapters() {
     const button = elements.exportChaptersBtn;
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
+    let stopDownloadElapsed;
     showError('');
     try {
         const useIntervals = elements.intervalExportToggle?.checked;
@@ -260,6 +266,7 @@ export async function exportChapters() {
             document_title: elements.exportTitle?.value.trim() || '',
             export_filename: elements.exportFilename?.value.trim() || '',
             transcript_language: state.currentTranslationLanguage || '',
+            media_export_id: selectedMediaExportId(videoId),
         };
         if (elements.exportOptionsDialog?.open) elements.exportOptionsDialog.close();
         renderExportSteps({status: 'running', steps: [{elapsed: 0, message: 'Starting export job'}]});
@@ -294,6 +301,8 @@ export async function exportChapters() {
             }
         } while (status.status !== 'complete');
         await refreshSavedExports();
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Downloading...';
+        stopDownloadElapsed = startElapsedTimer(button);
         const downloadResponse = await fetch(status.download_url);
         if (!downloadResponse.ok) throw new Error(`Could not download export (${downloadResponse.status})`);
         const blob = await downloadResponse.blob();
@@ -315,6 +324,7 @@ export async function exportChapters() {
     } catch (error) {
         showError(`Error exporting chapters: ${error.message}`);
     } finally {
+        stopDownloadElapsed?.();
         state.exportInProgress = false;
         button.disabled = false;
         button.innerHTML = '<i class="fas fa-download"></i> Export Chapters';
@@ -335,11 +345,13 @@ export async function generateChapters() {
     }
     state.summaryGenerationInProgress = true;
     const generateSummaryBtn = elements.generateSummaryBtn;
+    let stopElapsed;
     
     try {
         generateSummaryBtn.disabled = true;
         generateSummaryBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
-        setSummaryStatus('generating', '<i class="fas fa-spinner fa-spin"></i> Generating summary and chapters. This may take a minute...');
+        const status = setSummaryStatus('generating', '<i class="fas fa-spinner fa-spin"></i> Generating summary and chapters...');
+        stopElapsed = startElapsedTimer(status);
         showError('');
         const requestVideoId = state.currentVideoId;
         const requestLanguage = state.currentTranslationLanguage || '';
@@ -437,6 +449,7 @@ export async function generateChapters() {
             status.appendChild(stopRetryButton);
         }
     } finally {
+        stopElapsed?.();
         state.summaryGenerationInProgress = false;
         generateSummaryBtn.disabled = false;
         generateSummaryBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Summary';

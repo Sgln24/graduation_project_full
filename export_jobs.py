@@ -104,13 +104,15 @@ class ExportJobStore:
                 exports.append(state)
         return sorted(exports, key=lambda state: state["created_at"], reverse=True)
 
-    def start(self, video_id, options, generate):
+    def start(self, video_id, options, generate, *, caption_tracks=None):
         job_id = uuid.uuid4().hex
         state = {
             "id": job_id, "video_id": video_id, "instance": self.instance,
             "status": "queued", "created_at": time.time(), "steps": [],
             "title": options.get("document_title") or "Chapter export",
         }
+        if caption_tracks:
+            state["caption_tracks"] = caption_tracks
 
         def step(message):
             state["steps"].append({
@@ -140,6 +142,9 @@ class ExportJobStore:
                 source = Path(response.path)
                 target = self._directory(job_id) / ("download" + source.suffix)
                 shutil.copy2(source, target)
+                for index in range(len(state.get("caption_tracks", []))):
+                    shutil.copy2(workspace / f"track-{index}.vtt",
+                                 self._directory(job_id) / f"track-{index}.vtt")
                 state["filename"] = source.name
                 state["download_file"] = target.name
                 state["download_url"] = f"/export_jobs/{job_id}/download"

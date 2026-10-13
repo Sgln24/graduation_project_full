@@ -7,7 +7,12 @@ const source = fs.readFileSync(path.join(__dirname, '..', 'static', 'js', 'api-m
 const requests = [];
 const loaded = [];
 const errors = [];
+const timers = [];
 const context = vm.createContext({
+    startElapsedTimer: (container, elapsed = 0) => {
+        timers.push(elapsed);
+        return () => {};
+    },
     console, Date, setTimeout, clearTimeout,
     state: {currentVideoId: 'video', currentTranscript: [], whisperTranscriptPollGeneration: 0},
     elements: {transcriptContainer: {}, regenerateTranscriptBtn: {textContent: 'Regenerate'}},
@@ -28,5 +33,7 @@ vm.runInContext(source, context);
     assert.deepEqual(requests, ['/whisper_transcript_status/video']);
     assert.equal(loaded.length, 1);
     assert.deepEqual(errors, []);
+    context.renderWhisperProgress({status: 'running', steps_elapsed: 125}, Date.now());
+    assert.equal(timers.at(-1), 125, 'Reconnect uses server elapsed, not a fresh browser clock');
     console.log('PASS: reconnect to transcription progress without restarting the job');
 })().catch(error => {console.error(error); process.exitCode = 1;});

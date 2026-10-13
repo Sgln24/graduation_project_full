@@ -20,6 +20,7 @@ function element() {
     };
 }
 const context = vm.createContext({
+    startElapsedTimer: () => () => {},
     state, console,
     document: {createElement: element, getElementById: () => wordButton},
     fetch: async (url, options) => {

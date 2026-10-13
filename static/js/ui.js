@@ -2,6 +2,7 @@
 
 import { elements } from './elements.js';
 import { state } from './main.js';
+import { startElapsedTimer } from './progress-time.js';
 
 /**
  * Shows an error message
@@ -43,8 +44,14 @@ export function showErrorWithActions(message, actions) {
  * Shows or hides the loading indicator
  * @param {boolean} isLoading - Whether to show the loading indicator
  */
+let stopLoadingElapsed = null;
 export function showLoading(isLoading) {
     elements.loadingIndicator.style.display = isLoading ? 'block' : 'none';
+    if (isLoading && !stopLoadingElapsed) stopLoadingElapsed = startElapsedTimer(elements.loadingIndicator);
+    if (!isLoading) {
+        stopLoadingElapsed?.();
+        stopLoadingElapsed = null;
+    }
 }
 
 /**
@@ -288,6 +295,7 @@ export function generateWhisperTranscript(videoId) {
     elements.whisperProgressFill.style.width = '0%';
     elements.whisperProgressText.textContent = '0%';
     elements.generateWhisperBtn.disabled = true;
+    const stopElapsed = startElapsedTimer(elements.whisperProgress);
     
     // Start generation
     fetch(`/generate_whisper_transcript/${videoId}`, {
@@ -302,6 +310,7 @@ export function generateWhisperTranscript(videoId) {
                 elements.whisperProgressText.textContent = '100%';
                 showNotification('Whisper transcript already exists', 'success');
                 elements.generateWhisperBtn.disabled = false;
+                stopElapsed();
                 return;
             }
             
@@ -318,6 +327,7 @@ export function generateWhisperTranscript(videoId) {
                             elements.whisperProgressText.textContent = '100%';
                             showNotification('Whisper transcript generated successfully', 'success');
                             elements.generateWhisperBtn.disabled = false;
+                            stopElapsed();
                             
                             // If current preference is whisper, load the new transcript
                             const currentPreference = document.querySelector('input[name="transcriptPreference"]:checked').value;
@@ -329,6 +339,7 @@ export function generateWhisperTranscript(videoId) {
                             clearInterval(statusInterval);
                             showNotification('Error generating Whisper transcript: ' + statusData.error, 'error');
                             elements.generateWhisperBtn.disabled = false;
+                            stopElapsed();
                         } else if (statusData.status === 'in_progress') {
                             // Update progress
                             const progress = statusData.progress;
@@ -343,11 +354,13 @@ export function generateWhisperTranscript(videoId) {
         } else {
             showNotification('Failed to start Whisper transcript generation: ' + data.error, 'error');
             elements.generateWhisperBtn.disabled = false;
+            stopElapsed();
         }
     })
     .catch(error => {
         console.error('Error generating Whisper transcript:', error);
         showNotification('Error generating Whisper transcript', 'error');
         elements.generateWhisperBtn.disabled = false;
+        stopElapsed();
     });
 } 

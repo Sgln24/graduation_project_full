@@ -72,6 +72,15 @@ function render() {
         captionSelect.value = selected;
         captionSelect.disabled = switching || !versions.length;
     }
+    const tracks = document.getElementById('captionTrackVersions');
+    if (tracks) {
+        const chosen = new Set(Array.from(tracks.selectedOptions, item => item.value));
+        tracks.replaceChildren(...versions.map(version => {
+            const item = option(version);
+            item.selected = chosen.has(version.id) || (!chosen.size && version.id === selected);
+            return item;
+        }));
+    }
     const wrapper = control();
     if (wrapper) wrapper.hidden = !versions.length;
     const remove = deleteButton();

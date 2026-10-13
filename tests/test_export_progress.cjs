@@ -18,6 +18,7 @@ const history = element();
 const errors = [];
 const saved = [];
 const context = vm.createContext({
+    startElapsedTimer: () => () => {},
     state: {currentVideoId: 'video'}, elements: {}, console, TypeError,
     document: {
         createElement: element,
