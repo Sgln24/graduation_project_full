@@ -1,4 +1,4 @@
-# Slide Video Lecture Analysis Toolkit 
+# LectureSeek - Lecture Video Analysis
 
 [![ACM MM 2025](https://img.shields.io/badge/ACMMM-2025-1B427D)](https://dl.acm.org/doi/pdf/10.1145/3746027.3756873) 
 [![Python](https://img.shields.io/badge/python-3.7+-blue.svg)](https://python.org)
@@ -11,7 +11,7 @@
 
 ## Overview
 
-**Slide Video Lecture Analysis Toolkit** is a multimedia analysis platform for educational content processing, particularly slide-based lecture videos and presentations. The system combines computer vision, natural language processing, and machine learning techniques to provide automated video analysis, transcript generation, slide text extraction, and content relationships discovery.
+**LectureSeek** is a lecture video analysis platform for educational content processing, particularly slide-based lecture videos and presentations. It works with uploaded video recordings; YouTube import is an optional source, not the application's purpose. The system combines computer vision, natural language processing, and machine learning techniques to provide automated video analysis, transcript generation, slide text extraction, and content relationships discovery.
 
 ![Demo](demo.gif)
 
