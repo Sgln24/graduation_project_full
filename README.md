@@ -88,7 +88,16 @@ These are the changes specifically described as fixes to the inherited project. 
   changes do not alter the export. Download the full captioned MP4 from that dialog
   or **Saved exports**. Jobs and completed downloads remain available after a page
   reload; a server restart interrupts unfinished encoding. The original video is
-  never overwritten. Captions use white text with a dark outline near the bottom;
+  never overwritten. Choose white-on-black-box, white outlined, or yellow outlined
+  captions, small/medium/large text, and top/bottom positioning via
+  **Transcript options > Caption appearance and preview**. This larger dialog shows
+  a real FFmpeg-rendered preview on the selected video's frame before exporting;
+  **Use these settings** returns to the export controls without starting an export.
+  Captions use safe margins and short, two-line blocks rather than large paragraphs.
+  Long cues are split without dropping words; their sub-cue timing is estimated
+  proportionally from the source cue duration, not newly recognized word timings.
+  SRT/WebVTT files retain the original transcript cues. Preview and MP4 encoding
+  use the same style and wrapping code;
   rendering requires FFmpeg with the subtitles/libass filter and installed fonts
   for the selected language. No transcription, translation, or AI call is made.
   The same dialog offers **Download current transcript as SRT** and **WebVTT**,

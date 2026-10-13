@@ -4,6 +4,85 @@ import { showError } from './ui.js';
 
 let submitting = false;
 let refreshGeneration = 0;
+let previewGeneration = 0;
+let previewController = null;
+let previewUrl = null;
+let previewTimer = null;
+
+function selectedCaptionStyle() {
+    return {
+        preset: document.getElementById('captionStylePreset')?.value || 'box',
+        size: document.getElementById('captionStyleSize')?.value || 'medium',
+        position: document.getElementById('captionStylePosition')?.value || 'bottom',
+    };
+}
+
+function clearCaptionPreview() {
+    const image = document.getElementById('captionStylePreview');
+    if (image) {
+        image.hidden = true;
+        image.removeAttribute('src');
+    }
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+}
+
+export async function refreshCaptionPreview() {
+    const generation = ++previewGeneration;
+    previewController?.abort();
+    clearCaptionPreview();
+    const status = document.getElementById('captionPreviewStatus');
+    if (!status) return;
+    const videoId = state.currentVideoId;
+    if (!videoId || !state.currentTranscript?.length) {
+        status.textContent = 'Load a video and choose a transcript to preview captions.';
+        return;
+    }
+    const transcriptSource = state.currentTranscript;
+    const style = selectedCaptionStyle();
+    previewController = new AbortController();
+    const snapshot = transcriptSource.map(item => ({ start: item.start, duration: item.duration, text: item.text }));
+    status.textContent = 'Rendering caption preview...';
+    try {
+        const response = await fetch(`/caption_preview/${encodeURIComponent(videoId)}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            signal: previewController.signal,
+            body: JSON.stringify({
+                transcript: snapshot, style, at: document.querySelector('video')?.currentTime || 0,
+            }),
+        });
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.detail || `HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        if (generation !== previewGeneration || videoId !== state.currentVideoId
+            || transcriptSource !== state.currentTranscript) return;
+        previewUrl = URL.createObjectURL(blob);
+        const image = document.getElementById('captionStylePreview');
+        image.src = previewUrl;
+        image.hidden = false;
+        status.textContent = `Export preview: ${style.preset}, ${style.size}, ${style.position}.`;
+    } catch (error) {
+        if (error.name === 'AbortError' || generation !== previewGeneration
+            || videoId !== state.currentVideoId || transcriptSource !== state.currentTranscript) return;
+        status.textContent = `Could not render caption preview: ${error.message}`;
+    }
+}
+
+function scheduleCaptionPreview() {
+    clearTimeout(previewTimer);
+    ++previewGeneration;
+    previewController?.abort();
+    clearCaptionPreview();
+    previewTimer = setTimeout(() => void refreshCaptionPreview(), 400);
+}
+
+function updateChosenCaptionStyle() {
+    const style = selectedCaptionStyle();
+    const label = document.getElementById('captionChosenStyle');
+    if (label) label.textContent = `${document.getElementById('captionStylePreset').selectedOptions[0].textContent}, ${style.size}, ${style.position}`;
+}
 
 function transcriptLabel() {
     const selected = document.getElementById('transcriptVersionSelect')?.selectedOptions[0];
@@ -62,7 +141,10 @@ export async function exportCaptionedVideo() {
         await readResponse(await fetch(`/caption_video_jobs/${encodeURIComponent(videoId)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript, transcript_label: label, filename: state.currentVideoFilename || 'video' }),
+            body: JSON.stringify({
+                transcript, transcript_label: label, filename: state.currentVideoFilename || 'video',
+                style: selectedCaptionStyle(),
+            }),
         }));
         if (videoId === state.currentVideoId) await refreshCaptionExports();
     } catch (error) {
@@ -111,7 +193,26 @@ export async function downloadCaptionFile(format) {
 
 export function initCaptionExport() {
     document.getElementById('exportCaptionedVideoBtn')?.addEventListener('click', () => void exportCaptionedVideo());
-    document.getElementById('transcriptOptionsDialog')?.addEventListener('toggle', () => void refreshCaptionExports());
+    document.getElementById('transcriptOptionsDialog')?.addEventListener('toggle', () => {
+        if (document.getElementById('transcriptOptionsDialog').open) {
+            void refreshCaptionExports();
+        }
+    });
+    document.getElementById('openCaptionStyleBtn')?.addEventListener('click', () => {
+        document.getElementById('captionStyleDialog').showModal();
+        void refreshCaptionPreview();
+    });
+    document.getElementById('captionStyleDialog')?.addEventListener('close', () => {
+        ++previewGeneration;
+        previewController?.abort();
+        clearTimeout(previewTimer);
+        clearCaptionPreview();
+        updateChosenCaptionStyle();
+    });
+    ['captionStylePreset', 'captionStyleSize', 'captionStylePosition'].forEach(id => {
+        document.getElementById(id)?.addEventListener('change', scheduleCaptionPreview);
+    });
+    document.getElementById('refreshCaptionPreviewBtn')?.addEventListener('click', () => void refreshCaptionPreview());
     document.getElementById('downloadCaptionSrtBtn')?.addEventListener('click', () => void downloadCaptionFile('srt'));
     document.getElementById('downloadCaptionVttBtn')?.addEventListener('click', () => void downloadCaptionFile('vtt'));
     setInterval(() => {

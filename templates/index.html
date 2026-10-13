@@ -277,6 +277,8 @@
                                 <small id="translationModelStatus">Checking configured translation models...</small>
                                 <button id="translateTranscriptBtn" class="btn btn-secondary" type="button" disabled>Translate transcript</button>
                                 <small id="captionTranscriptLabel">Caption source: the current transcript or translation</small>
+                                <button id="openCaptionStyleBtn" class="btn btn-secondary" type="button">Caption appearance and preview</button>
+                                <small id="captionChosenStyle">White text on black box, medium, bottom</small>
                                 <button id="exportCaptionedVideoBtn" class="btn btn-secondary" type="button">Create video copy with burned-in captions</button>
                                 <button id="downloadCaptionSrtBtn" class="btn btn-secondary" type="button">Download current transcript as SRT</button>
                                 <button id="downloadCaptionVttBtn" class="btn btn-secondary" type="button">Download current transcript as WebVTT</button>
@@ -286,6 +288,41 @@
                             <div class="dialog-actions">
                                 <button class="btn btn-secondary" type="submit" value="cancel">Cancel</button>
                             </div>
+                                </form>
+                            </dialog>
+                            <dialog id="captionStyleDialog" class="caption-preview-dialog" aria-labelledby="captionStyleHeading">
+                                <form method="dialog">
+                                    <div class="dialog-header">
+                                        <h2 id="captionStyleHeading">Caption appearance and preview</h2>
+                                        <button class="dialog-close" type="submit" aria-label="Close caption preview">&times;</button>
+                                    </div>
+                                    <fieldset class="caption-style-options">
+                                        <legend>Burned-in caption appearance</legend>
+                                        <label for="captionStylePreset">Style</label>
+                                        <select id="captionStylePreset">
+                                            <option value="box" selected>White text on a black box (high contrast)</option>
+                                            <option value="outline">White text with a dark outline (minimal)</option>
+                                            <option value="yellow">Yellow text with a dark outline</option>
+                                        </select>
+                                        <label for="captionStyleSize">Text size</label>
+                                        <select id="captionStyleSize">
+                                            <option value="small">Small</option>
+                                            <option value="medium" selected>Medium</option>
+                                            <option value="large">Large</option>
+                                        </select>
+                                        <label for="captionStylePosition">Position</label>
+                                        <select id="captionStylePosition">
+                                            <option value="bottom" selected>Bottom</option>
+                                            <option value="top">Top (keep the bottom of slides visible)</option>
+                                        </select>
+                                        <button id="refreshCaptionPreviewBtn" class="btn btn-secondary" type="button">Preview at current video time</button>
+                                        <small>Real FFmpeg-rendered preview using the selected transcript and video frame. If there is no caption at the playhead, the nearest caption is shown. Long cues are split into short, timed captions with at most two lines; split timing is estimated from the original cue duration. SRT/WebVTT downloads keep their original cues.</small>
+                                        <p id="captionPreviewStatus" role="status" aria-live="polite"></p>
+                                        <img id="captionStylePreview" class="caption-style-preview" alt="Preview of the selected burned-in caption style on the video" hidden>
+                                    </fieldset>
+                                    <div class="dialog-actions">
+                                        <button class="btn btn-primary" type="submit">Use these settings</button>
+                                    </div>
                                 </form>
                             </dialog>
                         </div>

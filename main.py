@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, UploadFile, File, APIRouter
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
@@ -39,7 +39,7 @@ from dotenv import load_dotenv
 from export_jobs import ExportJobStore, export_workspace, cleanup_export_workspace
 from starlette.background import BackgroundTask
 from ffmpeg_tools import media_executable
-from caption_exports import validate_captions, render_captioned_video, video_duration, caption_text, caption_filename
+from caption_exports import validate_captions, render_captioned_video, video_duration, caption_text, caption_filename, validate_caption_style, render_caption_preview
 
 from project_paths import STATIC_DIR, VIDEO_DIR, TRANSCRIPTS_DIR, SCENES_DIR, THUMBNAILS_DIR, FULLSIZE_IMAGES_DIR, SUMMARIES_DIR, EXPORTS_DIR, DETECTIONS_DIR, OCR_RESULTS_DIR, ensure_app_directories
 
@@ -1973,6 +1973,7 @@ async def start_caption_video_job(video_id: str, request: Request):
         raise HTTPException(status_code=400, detail="Caption export options must be an object")
     try:
         captions = validate_captions(options.get("transcript"))
+        style = validate_caption_style(options.get("style"))
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     label = str(options.get("transcript_label") or "Selected transcript")[:200]
@@ -1980,10 +1981,32 @@ async def start_caption_video_job(video_id: str, request: Request):
 
     async def generate(video_id, options, step, artifacts, workspace):
         step(f"Caption source: {label}")
-        return await render_captioned_video(video_path, captions, filename, workspace, step)
+        return await render_captioned_video(video_path, captions, filename, workspace, step, style)
 
     job_id = export_jobs.start(video_id, {"document_title": f"Captioned video - {label}"}, generate)
     return {"success": True, "job_id": job_id, "status_url": f"/export_jobs/{job_id}/status"}
+
+
+@app.post("/caption_preview/{video_id}")
+async def caption_preview(video_id: str, request: Request):
+    video_path = video_processor.get_video_path(video_id)
+    if not video_path:
+        raise HTTPException(status_code=404, detail="Video not found")
+    options = await request.json()
+    if not isinstance(options, dict):
+        raise HTTPException(status_code=400, detail="Caption preview options must be an object")
+    try:
+        captions = validate_captions(options.get("transcript"))
+        style = validate_caption_style(options.get("style"))
+        at = options.get("at", 0)
+        validate_captions([{"start": at, "text": "Preview time"}])
+        with export_workspace() as workspace:
+            image = await render_caption_preview(video_path, captions, at, style, workspace)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
+    return Response(image, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/export_chapters/{video_id}")

@@ -10,23 +10,32 @@ function element() {
         append(child) { this.children.push(child); },
         replaceChildren() { this.children = []; },
         addEventListener(event, handler) { this.listeners[event] = handler; },
-        click() { this.clicked = true; }, remove() { this.removed = true; } };
+        click() { this.clicked = true; }, remove() { this.removed = true; },
+        showModal() { this.open = true; },
+        removeAttribute(name) { delete this[name]; } };
 }
 const ids = {};
 ['exportCaptionedVideoBtn', 'downloadCaptionSrtBtn', 'downloadCaptionVttBtn',
- 'captionVideoProgress', 'captionTranscriptLabel', 'transcriptVersionSelect', 'transcriptOptionsDialog']
+ 'captionVideoProgress', 'captionTranscriptLabel', 'transcriptVersionSelect', 'transcriptOptionsDialog',
+ 'captionStylePreset', 'captionStyleSize', 'captionStylePosition', 'captionStylePreview',
+ 'captionPreviewStatus', 'refreshCaptionPreviewBtn', 'captionStyleDialog',
+ 'openCaptionStyleBtn', 'captionChosenStyle']
     .forEach(id => ids[id] = element());
 ids.transcriptVersionSelect.selectedOptions = [{value: 'de-version', textContent: 'German translation'}];
+ids.captionStylePreset.value = 'yellow';
+ids.captionStylePreset.selectedOptions = [{textContent: 'Yellow text with a dark outline'}];
+ids.captionStyleSize.value = 'large';
+ids.captionStylePosition.value = 'top';
 const state = { currentVideoId: 'video', currentTranscriptSource: 'translation:de',
     currentVideoFilename: 'Lecture.mp4', currentTranscript: [{start: 1, duration: 2, text: 'Gewählte Version'}] };
 const requests = [], errors = [], links = [];
 const context = vm.createContext({
     state, showError: message => errors.push(message), refreshSavedExports: async () => {},
     fetch: (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject})),
-    document: {getElementById: id => ids[id], body: element(),
+    document: {getElementById: id => ids[id], body: element(), querySelector: () => ({currentTime: 12}),
         createElement: tag => { const item = element(); if(tag === 'a') links.push(item); return item; }},
     URL: {createObjectURL: () => 'blob:captions', revokeObjectURL() {}},
-    setTimeout() {}, setInterval() {},
+    setTimeout() {}, setInterval() {}, clearTimeout() {}, AbortController,
 });
 vm.runInContext(source, context);
 const reply = (request, data) => request.resolve({ok: true, json: async () => data});
@@ -39,6 +48,7 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     const payload = JSON.parse(requests[0].options.body);
     assert.equal(payload.transcript_label, 'German translation');
     assert.equal(payload.transcript[0].text, 'Gewählte Version');
+    assert.deepEqual(payload.style, {preset:'yellow', size:'large', position:'top'});
     state.currentTranscript[0].text = 'Changed later';
     state.currentVideoId = 'other';
     await context.exportCaptionedVideo();
@@ -68,9 +78,29 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     reply(requests[3], {exports: [{title: 'Captioned video - Wrong video', status: 'complete', steps: []}]});
     await stale;
     assert.equal(ids.captionVideoProgress.children.length, 0);
+    state.currentVideoId = 'video';
+    const preview = context.refreshCaptionPreview();
+    const previewPayload = JSON.parse(requests[4].options.body);
+    assert.equal(previewPayload.at, 12);
+    assert.equal(previewPayload.style.preset, 'yellow');
+    requests[4].resolve({ok: true, blob: async () => ({})});
+    await preview;
+    assert.equal(ids.captionStylePreview.hidden, false);
+    assert.equal(ids.captionStylePreview.src, 'blob:captions');
+    ids.captionStyleDialog.listeners.close();
+    assert.equal(ids.captionStylePreview.hidden, true, 'Closing the style dialog clears the preview');
+    assert.equal(ids.captionChosenStyle.textContent, 'Yellow text with a dark outline, large, top');
+    const oldPreview = context.refreshCaptionPreview();
+    state.currentVideoId = 'other';
+    requests[5].resolve({ok: true, blob: async () => ({})});
+    await oldPreview;
+    assert.equal(ids.captionStylePreview.hidden, true, 'Old preview must not appear on another video');
     state.currentTranscript = [];
     await context.downloadCaptionFile('srt');
-    assert.equal(requests.length, 4);
+    assert.equal(requests.length, 6);
     assert.equal(errors.length, 1);
+    ids.openCaptionStyleBtn.listeners.click();
+    assert.equal(ids.captionStyleDialog.open, true);
+    assert.match(ids.captionPreviewStatus.textContent, /choose a transcript/);
     console.log('PASS: selected transcript snapshot, sidecar downloads, saved jobs, races, and input guards');
 })().catch(error => { console.error(error); process.exitCode = 1; });
