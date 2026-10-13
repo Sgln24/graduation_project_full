@@ -84,25 +84,30 @@ These are the changes specifically described as fixes to the inherited project. 
 - **Multi-Source Transcription**: YouTube transcript extraction and Whisper-based speech recognition
 - **Burned-in Caption Video**: Select a transcript or translation from the saved
   versions, then click **Add captions to video** in the Transcript toolbar.
+  Its **Transcript for captions** dropdown uses the same saved versions; changing
+  it also changes the transcript shown on screen.
   Choose the appearance, inspect the preview, then click **Create video copy**.
   The current transcript is captured when you create the copy, so later version
   changes do not alter the export. **Previously generated captioned videos** at
   the top of **Add captions to video** is a dropdown listing copies from all lectures, newest first, with
-  filenames, creation dates and status. Select a completed copy and click its
-  download button; the refresh button reloads the list. The original lecture
+  filenames and creation dates. Only completed copies appear in the dropdown;
+  the newest is selected automatically. Click **Download MP4** to save the selected
+  copy with the app's save-file workflow; the refresh button reloads the list.
+  Unfinished and failed exports are shown separately below the creation controls.
+  The original lecture
   does not need to be selected. Copies also remain in **Saved exports**.
   Jobs and completed downloads remain available after a page
   reload; a server restart interrupts unfinished encoding. The original video is
   never overwritten. Choose white-on-black-box, white outlined, or yellow outlined
   captions. New video filenames include the caption language as an uppercase
-  two-letter code, for example `Lecture_DE-captioned.mp4`. Automatic uses the
-  selected translation language or the existing transcript-language detector;
-  override it in **Caption language** when needed. This labels the file, not a
-  request to translate its captions. Older saved copies keep their original names.
-  Choose small/medium/large text and top/bottom positioning in that dialog.
+  two-letter code, for example `Lecture_DE caption.mp4` or `Lecture_EN caption.mp4`.
+  The language comes from the selected translation or the existing transcript-language
+  detector, without a separate language selector. Older saved copies keep their original names.
+  Choose small/medium/large/XL text and top/bottom positioning in that dialog.
   The default is white text with a dark outline, medium size, at the bottom.
   This dialog shows a real FFmpeg-rendered preview on the selected video's
-  frame before exporting.
+  frame before exporting. **Open large preview at current video time** opens a
+  large, viewport-fitted view; closing it returns to the side-panel options.
   Opening the dialog or changing options does not start a video export.
   Captions use safe margins and short, two-line blocks rather than large paragraphs.
   Long cues are split without dropping words; their sub-cue timing is estimated

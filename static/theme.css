@@ -380,6 +380,15 @@ code {
 
 .saved-caption-videos-control {
     width: 100%;
+    flex-wrap: wrap;
+}
+
+.saved-caption-videos-control select {
+    flex-basis: 100%;
+}
+
+.saved-caption-videos-control .btn {
+    flex-shrink: 0;
 }
 
 #savedCaptionVideosStatus {
@@ -1295,6 +1304,31 @@ body .search-highlight.active {
 
 .caption-style-preview[hidden] {
     display: none;
+}
+
+.caption-large-preview-dialog {
+    width: min(1100px, calc(100vw - 24px));
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    margin: auto;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-1);
+    background: var(--surface-1);
+    overflow: auto;
+}
+
+.caption-large-preview-dialog::backdrop {
+    background: rgb(0 0 0 / 55%);
+}
+
+#captionLargePreviewImage {
+    display: block;
+    width: 100%;
+    max-height: calc(100dvh - 160px);
+    object-fit: contain;
+    background: #000;
 }
 
 @media (max-width: 850px) {

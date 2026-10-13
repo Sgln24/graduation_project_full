@@ -29,7 +29,11 @@ assert(buttons.get('exportCaptionedVideoBtn').includes('btn-primary'));
 assert(buttons.get('deleteTranscriptVersionBtn').includes('btn-danger'));
 const dialog = id => html.match(new RegExp(`<dialog id="${id}"[\\s\\S]*?<\\/dialog>`))[0];
 for (const [, attributes] of html.matchAll(/<dialog\b([^>]*)>/g)) {
-    assert(attributes.includes('options-dialog'), 'All app dialogs must share side-panel positioning');
+    if (attributes.includes('id="captionLargePreviewDialog"')) {
+        assert(attributes.includes('caption-large-preview-dialog'), 'Only the enlarged image preview may use a larger dialog');
+    } else {
+        assert(attributes.includes('options-dialog'), 'Option dialogs must share side-panel positioning');
+    }
 }
 const layout = fs.readFileSync(path.join(root, 'static', 'compact-layout.css'), 'utf8');
 assert(layout.includes('--popup-width: var(--panel-width, 420px)'), 'Desktop popups must match the panel, not widen across the video');
@@ -47,6 +51,10 @@ assert(dialog('captionStyleDialog').includes('id="captionStylePreview"'));
 assert(dialog('captionStyleDialog').includes('id="savedCaptionVideoSelect"'));
 assert(dialog('captionStyleDialog').includes('<option value="outline" selected>'));
 assert(dialog('captionStyleDialog').includes('<option value="medium" selected>'));
+assert(dialog('captionStyleDialog').includes('<option value="xl">'));
+assert(dialog('captionStyleDialog').includes('id="captionTranscriptVersionSelect"'));
+assert(!html.includes('id="captionLanguage"'), 'Language must come from the selected transcript');
+assert(dialog('captionLargePreviewDialog').includes('id="captionLargePreviewImage"'));
 assert.equal([...html.matchAll(/id="savedCaptionVideoSelect"/g)].length, 1, 'Only one saved video dropdown');
 assert(!html.includes('id="savedCaptionVideosDialog"'), 'No duplicate saved-video popup');
 for (const id of ['downloadCaptionSrtBtn', 'downloadCaptionVttBtn']) {

@@ -297,23 +297,15 @@
                                         <select id="savedCaptionVideoSelect" aria-label="Saved captioned videos" title="Saved captioned videos from all lectures">
                                             <option value="">Saved captioned videos</option>
                                         </select>
-                                        <button id="downloadSavedCaptionVideoBtn" class="btn btn-secondary btn-action btn-icon" type="button" disabled title="Download selected captioned video" aria-label="Download selected captioned video"><i class="fas fa-download" aria-hidden="true"></i></button>
+                                        <button id="downloadSavedCaptionVideoBtn" class="btn btn-secondary btn-action" type="button" disabled title="Download selected captioned video"><i class="fas fa-download" aria-hidden="true"></i> Download MP4</button>
                                         <button id="refreshCaptionVideosBtn" class="btn btn-secondary btn-action btn-icon" type="button" title="Refresh saved captioned videos" aria-label="Refresh saved captioned videos"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
                                     </div>
                                     <small id="savedCaptionVideosStatus" role="status" aria-live="polite"></small>
+                                    <label for="captionTranscriptVersionSelect">Transcript for captions</label>
+                                    <select id="captionTranscriptVersionSelect" aria-label="Transcript for captions"></select>
                                     <p id="captionTranscriptLabel">Caption source: the current transcript or translation</p>
                                     <fieldset class="caption-style-options">
                                         <legend>Burned-in caption appearance</legend>
-                                        <label for="captionLanguage">Caption language (for the filename)</label>
-                                        <select id="captionLanguage">
-                                            <option value="">Automatic (selected translation or detected transcript language)</option>
-                                            <option value="en">English (EN)</option>
-                                            <option value="de">German (DE)</option>
-                                            <option value="ar">Arabic (AR)</option>
-                                            <option value="pl">Polish (PL)</option>
-                                            <option value="fr">French (FR)</option>
-                                            <option value="es">Spanish (ES)</option>
-                                        </select>
                                         <label for="captionStylePreset">Style</label>
                                         <select id="captionStylePreset">
                                             <option value="box">White text on a black box (high contrast)</option>
@@ -325,13 +317,14 @@
                                             <option value="small">Small</option>
                                             <option value="medium" selected>Medium</option>
                                             <option value="large">Large</option>
+                                            <option value="xl">XL (extra large)</option>
                                         </select>
                                         <label for="captionStylePosition">Position</label>
                                         <select id="captionStylePosition">
                                             <option value="bottom" selected>Bottom</option>
                                             <option value="top">Top (keep the bottom of slides visible)</option>
                                         </select>
-                                        <button id="refreshCaptionPreviewBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-eye" aria-hidden="true"></i> Preview at current video time</button>
+                                        <button id="refreshCaptionPreviewBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-expand" aria-hidden="true"></i> Open large preview at current video time</button>
                                         <small>Real FFmpeg-rendered preview using the selected transcript and video frame. If there is no caption at the playhead, the nearest caption is shown. Long cues are split into short, timed captions with at most two lines; split timing is estimated from the original cue duration. SRT/WebVTT downloads keep their original cues.</small>
                                         <p id="captionPreviewStatus" role="status" aria-live="polite"></p>
                                         <img id="captionStylePreview" class="caption-style-preview" alt="Preview of the selected burned-in caption style on the video" hidden>
@@ -342,6 +335,18 @@
                                         <button id="exportCaptionedVideoBtn" class="btn btn-primary" type="button"><i class="fas fa-film" aria-hidden="true"></i> Create video copy</button>
                                     </div>
                                     <div id="captionVideoProgress" role="status" aria-live="polite"></div>
+                                </form>
+                            </dialog>
+                            <dialog id="captionLargePreviewDialog" class="caption-large-preview-dialog" aria-labelledby="captionLargePreviewHeading">
+                                <form method="dialog">
+                                    <div class="dialog-header">
+                                        <h2 id="captionLargePreviewHeading">Caption preview</h2>
+                                        <button class="dialog-close" type="submit" aria-label="Close large caption preview">&times;</button>
+                                    </div>
+                                    <img id="captionLargePreviewImage" alt="Large preview of captions on the video frame">
+                                    <div class="dialog-actions">
+                                        <button class="btn btn-secondary" type="submit">Back to caption options</button>
+                                    </div>
                                 </form>
                             </dialog>
                             <dialog id="transcriptDownloadDialog" class="options-dialog" aria-labelledby="transcriptDownloadHeading">

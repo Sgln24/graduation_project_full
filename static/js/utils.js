@@ -26,7 +26,7 @@ export function formatTime(seconds) {
  * Saves a generated file using the browser's location picker when available.
  * Browsers without the File System Access API fall back to their normal download flow.
  */
-export async function saveBlobToUserLocation(blob, filename) {
+export async function saveBlobToUserLocation(blob, filename, container = document.body) {
     const picker = window.showSaveFilePicker;
     if (typeof picker === 'function') {
         const extension = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
@@ -34,6 +34,7 @@ export async function saveBlobToUserLocation(blob, filename) {
             zip: 'application/zip',
             docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             pdf: 'application/pdf',
+            mp4: 'video/mp4',
         };
         try {
             const handle = await picker({
@@ -66,7 +67,7 @@ export async function saveBlobToUserLocation(blob, filename) {
     link.href = url;
     link.download = filename;
     link.style.display = 'none';
-    document.body.appendChild(link);
+    container.appendChild(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);

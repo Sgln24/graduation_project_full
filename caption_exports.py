@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 from ffmpeg_tools import media_executable
 
-CAPTION_SIZES = {"small": (30, 64), "medium": (40, 48), "large": (50, 38)}
+CAPTION_SIZES = {"small": (30, 64), "medium": (40, 48), "large": (50, 38), "xl": (72, 26)}
 
 
 def validate_caption_style(options=None):
@@ -181,7 +181,7 @@ async def render_captioned_video(video_path, captions, filename, workspace, step
     chunks = burn_caption_chunks(captions, duration, style)
     (workspace / "captions.srt").write_text(caption_text(chunks, duration, burn=True), encoding="utf-8")
     name = caption_filename(filename)
-    output = workspace / f"{name}-captioned.mp4"
+    output = workspace / f"{name} caption.mp4"
     step("Burning captions into a video copy; the original video is unchanged")
     step(f"Caption style: {style['preset']}, {style['size']}, {style['position']}; at most two lines")
     command = [

@@ -66,6 +66,12 @@ function render() {
         element.append(group);
     });
     element.value = selected;
+    const captionSelect = document.getElementById('captionTranscriptVersionSelect');
+    if (captionSelect) {
+        captionSelect.replaceChildren(...Array.from(element.children, child => child.cloneNode(true)));
+        captionSelect.value = selected;
+        captionSelect.disabled = switching || !versions.length;
+    }
     const wrapper = control();
     if (wrapper) wrapper.hidden = !versions.length;
     const remove = deleteButton();
@@ -129,6 +135,8 @@ export async function chooseTranscriptVersion(versionId) {
     switching = true;
     const element = select();
     if (element) element.disabled = true;
+    const captionSelect = document.getElementById('captionTranscriptVersionSelect');
+    if (captionSelect) captionSelect.disabled = true;
     try {
         const response = await fetch(
             `/transcript_versions/${encodeURIComponent(videoId)}/${encodeURIComponent(versionId)}/activate`,
@@ -165,6 +173,7 @@ export async function chooseTranscriptVersion(versionId) {
     } finally {
         switching = false;
         if (element) element.disabled = false;
+        if (captionSelect) captionSelect.disabled = false;
         void refreshTranscriptVersions();
     }
 }
@@ -198,6 +207,9 @@ function scheduleRefresh() {
 
 export function initTranscriptVersions() {
     select()?.addEventListener('change', (event) => {
+        if (event.target.value) void chooseTranscriptVersion(event.target.value);
+    });
+    document.getElementById('captionTranscriptVersionSelect')?.addEventListener('change', (event) => {
         if (event.target.value) void chooseTranscriptVersion(event.target.value);
     });
     deleteButton()?.addEventListener('click', () => void deleteSelectedVersion());

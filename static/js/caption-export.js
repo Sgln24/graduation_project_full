@@ -1,11 +1,13 @@
 import { state } from './main.js';
 import { refreshSavedExports } from './chapters.js';
 import { showError } from './ui.js';
+import { saveBlobToUserLocation } from './utils.js';
 
 let submitting = false;
 let refreshGeneration = 0;
 let savedVideosGeneration = 0;
 let savedCaptionVideos = [];
+let downloading = false;
 let previewGeneration = 0;
 let previewController = null;
 let previewUrl = null;
@@ -20,6 +22,9 @@ function selectedCaptionStyle() {
 }
 
 function clearCaptionPreview() {
+    const largeDialog = document.getElementById('captionLargePreviewDialog');
+    if (largeDialog?.open) largeDialog.close();
+    document.getElementById('captionLargePreviewImage')?.removeAttribute('src');
     const image = document.getElementById('captionStylePreview');
     if (image) {
         image.hidden = true;
@@ -30,6 +35,7 @@ function clearCaptionPreview() {
 }
 
 export async function refreshCaptionPreview() {
+    clearTimeout(previewTimer);
     const generation = ++previewGeneration;
     previewController?.abort();
     clearCaptionPreview();
@@ -81,7 +87,10 @@ function scheduleCaptionPreview() {
 }
 
 function transcriptLabel() {
-    const selected = document.getElementById('transcriptVersionSelect')?.selectedOptions[0];
+    const selector = document.getElementById('captionStyleDialog')?.open
+        ? document.getElementById('captionTranscriptVersionSelect')
+        : document.getElementById('transcriptVersionSelect');
+    const selected = selector?.selectedOptions[0];
     return selected?.value ? selected.textContent : state.currentTranscriptSource || 'Current transcript';
 }
 
@@ -119,6 +128,7 @@ function renderCaptionJobs(container, jobs, emptyMessage) {
 }
 
 export async function refreshSavedCaptionVideos() {
+    if (downloading) return;
     const generation = ++savedVideosGeneration;
     const select = document.getElementById('savedCaptionVideoSelect');
     const status = document.getElementById('savedCaptionVideosStatus');
@@ -133,16 +143,17 @@ export async function refreshSavedCaptionVideos() {
         placeholder.value = '';
         placeholder.textContent = 'Saved captioned videos';
         select.append(placeholder);
-        savedCaptionVideos.forEach(job => {
+        const completed = savedCaptionVideos.filter(job => job.status === 'complete');
+        completed.forEach(job => {
             const option = document.createElement('option');
             option.value = job.id;
             const date = job.created_at ? ` - ${new Date(job.created_at * 1000).toLocaleString()}` : '';
-            option.textContent = `${job.filename || job.title}${date} (${job.status})`;
+            option.textContent = `${job.filename || job.title}${date}`;
             select.append(option);
         });
-        select.value = savedCaptionVideos.some(job => job.id === selected) ? selected : '';
+        select.value = completed.some(job => job.id === selected) ? selected : completed[0]?.id || '';
         updateSavedCaptionSelection();
-        if (!savedCaptionVideos.length) status.textContent = 'No captioned videos saved yet.';
+        if (!completed.length) status.textContent = 'No completed captioned videos yet. Unfinished copies are not available to download.';
     } catch (error) {
         if (generation === savedVideosGeneration) {
             status.textContent = `Could not load saved captioned videos: ${error.message}`;
@@ -153,7 +164,8 @@ export async function refreshSavedCaptionVideos() {
 function updateSavedCaptionSelection() {
     const id = document.getElementById('savedCaptionVideoSelect').value;
     const job = savedCaptionVideos.find(item => item.id === id);
-    document.getElementById('downloadSavedCaptionVideoBtn').disabled = !job || job.status !== 'complete';
+    document.getElementById('downloadSavedCaptionVideoBtn').disabled = downloading || !job || job.status !== 'complete';
+    if (downloading) return;
     document.getElementById('savedCaptionVideosStatus').textContent = !job ? ''
         : job.status === 'complete' ? job.title
         : job.status === 'error' ? `Export failed: ${job.error}`
@@ -181,6 +193,11 @@ export async function refreshCaptionExports() {
 
 export async function exportCaptionedVideo() {
     if (submitting) return;
+    const selector = document.getElementById('captionTranscriptVersionSelect');
+    if (selector?.disabled && selector.value) {
+        showError('Wait for the selected transcript to finish loading before creating a video copy.');
+        return;
+    }
     const videoId = state.currentVideoId;
     if (!videoId || !state.currentTranscript?.length) {
         showError('Load a video and choose a transcript or translation before exporting captions.');
@@ -198,8 +215,7 @@ export async function exportCaptionedVideo() {
             body: JSON.stringify({
                 transcript, transcript_label: label, filename: state.currentVideoFilename || 'video',
                 style: selectedCaptionStyle(),
-                caption_language: document.getElementById('captionLanguage')?.value
-                    || state.currentTranslationLanguage
+                caption_language: state.currentTranslationLanguage
                     || (state.currentTranscriptSource?.startsWith('translation:') ? state.currentTranscriptSource.slice('translation:'.length) : ''),
             }),
         }));
@@ -252,7 +268,6 @@ export async function downloadCaptionFile(format) {
 export function initCaptionExport() {
     document.getElementById('exportCaptionedVideoBtn')?.addEventListener('click', () => void exportCaptionedVideo());
     document.getElementById('openCaptionStyleBtn')?.addEventListener('click', () => {
-        document.getElementById('captionLanguage').value = '';
         document.getElementById('captionStyleDialog').showModal();
         void refreshCaptionPreview();
         void refreshCaptionExports();
@@ -263,18 +278,36 @@ export function initCaptionExport() {
         document.getElementById('transcriptDownloadDialog').showModal();
     });
     document.getElementById('savedCaptionVideoSelect')?.addEventListener('change', updateSavedCaptionSelection);
-    document.getElementById('downloadSavedCaptionVideoBtn')?.addEventListener('click', () => {
+    document.getElementById('downloadSavedCaptionVideoBtn')?.addEventListener('click', async () => {
+        if (downloading) return;
         const job = savedCaptionVideos.find(item => item.id === document.getElementById('savedCaptionVideoSelect').value);
         if (!job || job.status !== 'complete') {
             showError('Choose a completed captioned video to download.');
             return;
         }
-        const link = document.createElement('a');
-        link.href = job.download_url;
-        link.download = job.filename;
-        document.getElementById('captionStyleDialog').append(link);
-        link.click();
-        link.remove();
+        downloading = true;
+        updateSavedCaptionSelection();
+        const status = document.getElementById('savedCaptionVideosStatus');
+        status.textContent = 'Downloading video copy...';
+        try {
+            const response = await fetch(job.download_url);
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || `HTTP ${response.status}`);
+            }
+            const blob = await response.blob();
+            const container = Array.from(document.querySelectorAll('dialog:modal')).at(-1) || document.body;
+            await saveBlobToUserLocation(blob, job.filename, container);
+            status.textContent = 'Video copy sent to your save dialog or browser downloads.';
+        } catch (error) {
+            status.textContent = error.name === 'AbortError' ? 'Save cancelled.' : `Could not download video copy: ${error.message}`;
+            if (error.name !== 'AbortError') showError(status.textContent);
+        } finally {
+            downloading = false;
+            document.getElementById('downloadSavedCaptionVideoBtn').disabled = !savedCaptionVideos.some(
+                item => item.id === document.getElementById('savedCaptionVideoSelect').value && item.status === 'complete'
+            );
+        }
     });
     document.getElementById('refreshCaptionVideosBtn')?.addEventListener('click', () => void refreshSavedCaptionVideos());
     document.getElementById('captionStyleDialog')?.addEventListener('close', () => {
@@ -286,7 +319,19 @@ export function initCaptionExport() {
     ['captionStylePreset', 'captionStyleSize', 'captionStylePosition'].forEach(id => {
         document.getElementById(id)?.addEventListener('change', scheduleCaptionPreview);
     });
-    document.getElementById('refreshCaptionPreviewBtn')?.addEventListener('click', () => void refreshCaptionPreview());
+    document.getElementById('refreshCaptionPreviewBtn')?.addEventListener('click', async () => {
+        await refreshCaptionPreview();
+        if (!previewUrl || !document.getElementById('captionStyleDialog').open) return;
+        document.getElementById('captionLargePreviewImage').src = previewUrl;
+        const dialog = document.getElementById('captionLargePreviewDialog');
+        if (!dialog.open) dialog.showModal();
+    });
+    document.addEventListener('transcriptUpdated', () => {
+        if (document.getElementById('captionStyleDialog')?.open) {
+            scheduleCaptionPreview();
+            void refreshCaptionExports();
+        }
+    });
     document.getElementById('downloadCaptionSrtBtn')?.addEventListener('click', () => void downloadCaptionFile('srt'));
     document.getElementById('downloadCaptionVttBtn')?.addEventListener('click', () => void downloadCaptionFile('vtt'));
     setInterval(() => {

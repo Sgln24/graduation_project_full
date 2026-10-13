@@ -34,7 +34,7 @@ class CaptionTests(unittest.TestCase):
         self.assertEqual(validate_caption_style(), {"preset": "outline", "size": "medium", "position": "bottom"})
         text = " ".join(f"word{index}" for index in range(100))
         captions = validate_captions([{"start": 2, "duration": 20, "text": text}])
-        for size in ("small", "medium", "large"):
+        for size in ("small", "medium", "large", "xl"):
             chunks = burn_caption_chunks(captions, 30, validate_caption_style({"size": size}))
             self.assertEqual(" ".join(chunk["text"].replace("\n", " ") for chunk in chunks), text)
             self.assertTrue(all(len(chunk["text"].splitlines()) <= 2 for chunk in chunks))
@@ -198,7 +198,7 @@ class CaptionTests(unittest.TestCase):
             store = ExportJobStore(root / "jobs")
 
             async def generate(video_id, options, step, artifacts, workspace):
-                return await render_captioned_video(original, captions, "lecture.mp4", workspace, step)
+                return await render_captioned_video(original, captions, "lecture_EN.mp4", workspace, step)
 
             job_id = store.start("video", {"document_title": "Captioned video - Chosen"}, generate)
             for _ in range(300):
@@ -208,6 +208,7 @@ class CaptionTests(unittest.TestCase):
                 time.sleep(0.1)
             self.assertEqual(state["status"], "complete", state)
             output = store.file(job_id, state["download_file"])
+            self.assertEqual(state["filename"], "lecture_EN caption.mp4")
             self.assertAlmostEqual(asyncio.run(video_duration(output)), 3, delta=0.3)
             self.assertEqual(hashlib.sha256(original.read_bytes()).digest(), digest)
 
@@ -235,7 +236,7 @@ class CaptionTests(unittest.TestCase):
             images = {}
             for preset in ("box", "outline", "yellow"):
                 for position in ("top", "bottom"):
-                    for size in ("small", "medium", "large"):
+                    for size in ("small", "medium", "large", "xl"):
                         with self.subTest(preset=preset, position=position, size=size):
                             style = validate_caption_style({"preset": preset, "position": position, "size": size})
                             data = asyncio.run(render_caption_preview(original, captions, 0.5, style, preview_root))
@@ -253,6 +254,18 @@ class CaptionTests(unittest.TestCase):
                             "Box must differ from outline on a colored frame")
             self.assertTrue(images["box", "top", "large"] != images["box", "top", "small"],
                             "Font size must affect actual rendered frames")
+            def text_height(data):
+                image = Image.open(BytesIO(data)).convert("RGB")
+                rows = [y for y in range(image.height) if any(
+                    max(image.getpixel((x, y))) > 100 for x in range(image.width)
+                )]
+                return max(rows) - min(rows) + 1
+
+            self.assertGreater(
+                text_height(images["outline", "bottom", "xl"]),
+                text_height(images["outline", "bottom", "large"]) * 1.25,
+                "XL must render noticeably larger text, not just have a different label",
+            )
 
     def test_encoder_failure_is_explicit(self):
         async def duration(path):
