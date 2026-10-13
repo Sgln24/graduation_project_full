@@ -19,7 +19,7 @@ const ids = {};
  'captionVideoProgress', 'captionTranscriptLabel', 'transcriptVersionSelect', 'transcriptOptionsDialog',
  'captionStylePreset', 'captionStyleSize', 'captionStylePosition', 'captionStylePreview',
  'captionPreviewStatus', 'refreshCaptionPreviewBtn', 'captionStyleDialog',
- 'openCaptionStyleBtn', 'captionChosenStyle']
+ 'openCaptionStyleBtn', 'downloadTranscriptBtn', 'transcriptDownloadDialog', 'downloadTranscriptLabel']
     .forEach(id => ids[id] = element());
 ids.transcriptVersionSelect.selectedOptions = [{value: 'de-version', textContent: 'German translation'}];
 ids.captionStylePreset.value = 'yellow';
@@ -44,6 +44,10 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     context.initCaptionExport();
     assert.equal(typeof ids.downloadCaptionSrtBtn.listeners.click, 'function');
     assert.equal(typeof ids.downloadCaptionVttBtn.listeners.click, 'function');
+    ids.downloadTranscriptBtn.listeners.click();
+    assert.equal(ids.transcriptDownloadDialog.open, true);
+    assert.equal(ids.downloadTranscriptLabel.textContent, 'Source: German translation');
+    assert.equal(requests.length, 0, 'Choosing a format must not start a download');
     const exporting = context.exportCaptionedVideo();
     const payload = JSON.parse(requests[0].options.body);
     assert.equal(payload.transcript_label, 'German translation');
@@ -64,6 +68,7 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     await download;
     assert.equal(links[0].download, 'Lecture.vtt');
     assert(links[0].clicked && links[0].removed);
+    assert(ids.transcriptDownloadDialog.children.includes(links[0]), 'Download link must be inside the active modal');
     assert.equal(ids.downloadCaptionVttBtn.disabled, false);
     const refresh = context.refreshCaptionExports();
     reply(requests[2], {exports: [
@@ -89,7 +94,6 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.equal(ids.captionStylePreview.src, 'blob:captions');
     ids.captionStyleDialog.listeners.close();
     assert.equal(ids.captionStylePreview.hidden, true, 'Closing the style dialog clears the preview');
-    assert.equal(ids.captionChosenStyle.textContent, 'Yellow text with a dark outline, large, top');
     const oldPreview = context.refreshCaptionPreview();
     state.currentVideoId = 'other';
     requests[5].resolve({ok: true, blob: async () => ({})});
@@ -102,5 +106,16 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     ids.openCaptionStyleBtn.listeners.click();
     assert.equal(ids.captionStyleDialog.open, true);
     assert.match(ids.captionPreviewStatus.textContent, /choose a transcript/);
+    assert.equal(requests.length, 7);
+    assert(requests[6].url.startsWith('/saved_exports/'), 'Opening captions only refreshes saved jobs, not video encoding');
+    reply(requests[6], {exports: []});
+    state.currentTranscript = [{start: 1, duration: 2, text: 'Chosen caption'}];
+    ids.openCaptionStyleBtn.listeners.click();
+    assert.equal(requests[7].url, '/caption_preview/other');
+    assert.equal(JSON.parse(requests[7].options.body).transcript[0].text, 'Chosen caption');
+    assert.equal(requests[8].url, '/saved_exports/other');
+    assert.equal(requests.length, 9, 'Opening the caption dialog must not start encoding');
+    requests[7].resolve({ok: true, blob: async () => ({})});
+    reply(requests[8], {exports: []});
     console.log('PASS: selected transcript snapshot, sidecar downloads, saved jobs, races, and input guards');
 })().catch(error => { console.error(error); process.exitCode = 1; });

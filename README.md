@@ -83,16 +83,17 @@ These are the changes specifically described as fixes to the inherited project. 
 - **Dual OCR Systems**: Run Start Slide OCR first to read detected text with Tesseract. Once that pass completes with readable results and no pending or failed text elements, Process with Surya OCR becomes available as an optional additional pass.
 - **Multi-Source Transcription**: YouTube transcript extraction and Whisper-based speech recognition
 - **Burned-in Caption Video**: Select a transcript or translation from the saved
-  versions, then open **Transcript options > Create video copy with burned-in
-  captions**. The current transcript is captured when you click, so later version
+  versions, then click **Add captions to video** in the Transcript toolbar.
+  Choose the appearance, inspect the preview, then click **Create video copy**.
+  The current transcript is captured when you create the copy, so later version
   changes do not alter the export. Download the full captioned MP4 from that dialog
   or **Saved exports**. Jobs and completed downloads remain available after a page
   reload; a server restart interrupts unfinished encoding. The original video is
   never overwritten. Choose white-on-black-box, white outlined, or yellow outlined
-  captions, small/medium/large text, and top/bottom positioning via
-  **Transcript options > Caption appearance and preview**. This larger dialog shows
-  a real FFmpeg-rendered preview on the selected video's frame before exporting;
-  **Use these settings** returns to the export controls without starting an export.
+  captions, small/medium/large text, and top/bottom positioning in that dialog.
+  This larger dialog shows a real FFmpeg-rendered preview on the selected video's
+  frame before exporting.
+  Opening the dialog or changing options does not start a video export.
   Captions use safe margins and short, two-line blocks rather than large paragraphs.
   Long cues are split without dropping words; their sub-cue timing is estimated
   proportionally from the source cue duration, not newly recognized word timings.
@@ -100,7 +101,8 @@ These are the changes specifically described as fixes to the inherited project. 
   use the same style and wrapping code;
   rendering requires FFmpeg with the subtitles/libass filter and installed fonts
   for the selected language. No transcription, translation, or AI call is made.
-  The same dialog offers **Download current transcript as SRT** and **WebVTT**,
+  The separate **Download transcript** toolbar action opens a format chooser for
+  **SRT** and **WebVTT**,
   using UTF-8 text and the selected version's timestamps. These files are quick
   sidecar downloads, not burned-in video. Missing/zero cue durations extend to the
   next distinct cue start (or video end); cues beyond the video end are excluded.

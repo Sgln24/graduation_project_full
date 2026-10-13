@@ -212,6 +212,10 @@
                                 <select id="transcriptVersionSelect" aria-label="Saved transcripts and translations" title="Saved transcripts and translations"></select>
                                 <button id="deleteTranscriptVersionBtn" class="btn btn-danger transcript-version-delete" type="button" aria-label="Delete this saved version" title="Delete this saved version"><i class="fas fa-trash-alt"></i></button>
                             </div>
+                            <div class="transcript-export-actions">
+                                <button id="openCaptionStyleBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-film" aria-hidden="true"></i> Add captions to video</button>
+                                <button id="downloadTranscriptBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download transcript</button>
+                            </div>
                             <dialog id="transcriptOptionsDialog" class="options-dialog">
                                 <form method="dialog">
                                 <div class="dialog-header">
@@ -276,14 +280,6 @@
                                 </select>
                                 <small id="translationModelStatus">Checking configured translation models...</small>
                                 <button id="translateTranscriptBtn" class="btn btn-secondary btn-action" type="button" disabled>Translate transcript</button>
-                                <small id="captionTranscriptLabel">Caption source: the current transcript or translation</small>
-                                <button id="openCaptionStyleBtn" class="btn btn-secondary btn-options" type="button"><i class="fas fa-sliders-h" aria-hidden="true"></i> Caption appearance and preview</button>
-                                <small id="captionChosenStyle">White text on black box, medium, bottom</small>
-                                <button id="exportCaptionedVideoBtn" class="btn btn-primary" type="button"><i class="fas fa-film" aria-hidden="true"></i> Create video copy with burned-in captions</button>
-                                <button id="downloadCaptionSrtBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download current transcript as SRT</button>
-                                <button id="downloadCaptionVttBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download current transcript as WebVTT</button>
-                                <small>Uses the transcript or translation currently selected on screen. Choose a saved version before opening these options. Captions are permanently visible in the MP4 copy; the original stays unchanged. Encoding a long video can take several minutes. You may close this dialog while it runs.</small>
-                                <div id="captionVideoProgress" role="status" aria-live="polite"></div>
                             </div>
                             <div class="dialog-actions">
                                 <button class="btn btn-secondary" type="submit" value="cancel">Cancel</button>
@@ -293,9 +289,10 @@
                             <dialog id="captionStyleDialog" class="caption-preview-dialog" aria-labelledby="captionStyleHeading">
                                 <form method="dialog">
                                     <div class="dialog-header">
-                                        <h2 id="captionStyleHeading">Caption appearance and preview</h2>
+                                        <h2 id="captionStyleHeading">Add captions to video</h2>
                                         <button class="dialog-close" type="submit" aria-label="Close caption preview">&times;</button>
                                     </div>
+                                    <p id="captionTranscriptLabel">Caption source: the current transcript or translation</p>
                                     <fieldset class="caption-style-options">
                                         <legend>Burned-in caption appearance</legend>
                                         <label for="captionStylePreset">Style</label>
@@ -320,8 +317,30 @@
                                         <p id="captionPreviewStatus" role="status" aria-live="polite"></p>
                                         <img id="captionStylePreview" class="caption-style-preview" alt="Preview of the selected burned-in caption style on the video" hidden>
                                     </fieldset>
+                                    <p>Uses the transcript or translation currently selected on screen. Captions are permanently visible in the MP4 copy; the original stays unchanged. Encoding a long video can take several minutes. You may close this dialog while it runs and find the download in Saved exports.</p>
                                     <div class="dialog-actions">
-                                        <button class="btn btn-primary" type="submit">Use these settings</button>
+                                        <button class="btn btn-secondary" type="submit">Close</button>
+                                        <button id="exportCaptionedVideoBtn" class="btn btn-primary" type="button"><i class="fas fa-film" aria-hidden="true"></i> Create video copy</button>
+                                    </div>
+                                    <div id="captionVideoProgress" role="status" aria-live="polite"></div>
+                                </form>
+                            </dialog>
+                            <dialog id="transcriptDownloadDialog" class="options-dialog" aria-labelledby="transcriptDownloadHeading">
+                                <form method="dialog">
+                                    <div class="dialog-header">
+                                        <h2 id="transcriptDownloadHeading">Download transcript</h2>
+                                        <button class="dialog-close" type="submit" aria-label="Close transcript download">&times;</button>
+                                    </div>
+                                    <p id="downloadTranscriptLabel">Source: the current transcript or translation</p>
+                                    <p>Choose a subtitle format. Both include the selected transcript's text and timestamps.</p>
+                                    <div class="transcript-download-formats">
+                                        <button id="downloadCaptionSrtBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download SRT (.srt)</button>
+                                        <small>SubRip subtitles for most video players and editors.</small>
+                                        <button id="downloadCaptionVttBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download WebVTT (.vtt)</button>
+                                        <small>Web subtitles for browser-based video players.</small>
+                                    </div>
+                                    <div class="dialog-actions">
+                                        <button class="btn btn-secondary" type="submit">Close</button>
                                     </div>
                                 </form>
                             </dialog>

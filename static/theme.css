@@ -1254,6 +1254,22 @@ body .search-highlight.active {
     padding: 12px;
 }
 
+.transcript-export-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+}
+
+.transcript-export-actions .btn {
+    flex: 1 1 auto;
+}
+
+.transcript-download-formats {
+    display: grid;
+    gap: 8px;
+}
+
 .caption-preview-dialog {
     box-sizing: border-box;
     width: min(900px, 94vw);

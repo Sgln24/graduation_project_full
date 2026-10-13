@@ -8,13 +8,14 @@ const buttons = new Map([...html.matchAll(/<button\b([^>]*)>/g)].map(([, attribu
     attributes.match(/\bid="([^"]+)"/)?.[1],
     attributes.match(/\bclass="([^"]+)"/)?.[1]?.split(/\s+/) || [],
 ]));
-const options = ['settingsBtn', 'transcriptOptionsBtn', 'summaryOptionsBtn', 'openCaptionStyleBtn'];
+const options = ['settingsBtn', 'transcriptOptionsBtn', 'summaryOptionsBtn'];
 const actions = [
     'identifySpeakersBtn', 'regenerateTranscriptAction', 'uploadTranscriptBtn',
     'translateTranscriptBtn', 'downloadCaptionSrtBtn', 'downloadCaptionVttBtn',
     'refreshCaptionPreviewBtn', 'exportChaptersBtn', 'refreshSavedExportsBtn',
     'detectScenesBtn', 'refreshSlideTitlesBtn', 'downloadScreenshotsBtn',
     'downloadSlidesPdfBtn', 'downloadSlideTextWordBtn',
+    'openCaptionStyleBtn', 'downloadTranscriptBtn',
 ];
 for (const id of options) {
     assert(buttons.get(id)?.includes('btn-options'), `${id} must remain an options control`);
@@ -25,6 +26,17 @@ for (const id of actions) {
 }
 assert(buttons.get('exportCaptionedVideoBtn').includes('btn-primary'));
 assert(buttons.get('deleteTranscriptVersionBtn').includes('btn-danger'));
+const dialog = id => html.match(new RegExp(`<dialog id="${id}"[\\s\\S]*?<\\/dialog>`))[0];
+const transcriptOptions = dialog('transcriptOptionsDialog');
+for (const id of ['openCaptionStyleBtn', 'downloadTranscriptBtn', 'exportCaptionedVideoBtn',
+    'downloadCaptionSrtBtn', 'downloadCaptionVttBtn', 'captionStylePreset']) {
+    assert(!transcriptOptions.includes(`id="${id}"`), `${id} must not be inside Transcript options`);
+}
+assert(dialog('captionStyleDialog').includes('id="exportCaptionedVideoBtn"'));
+assert(dialog('captionStyleDialog').includes('id="captionStylePreview"'));
+for (const id of ['downloadCaptionSrtBtn', 'downloadCaptionVttBtn']) {
+    assert(dialog('transcriptDownloadDialog').includes(`id="${id}"`), 'Formats belong in the download chooser');
+}
 for (const id of ['previousChapterBtn', 'nextChapterBtn']) {
     assert(!buttons.get(id).includes('btn-action'), 'Playback navigation must remain neutral');
 }

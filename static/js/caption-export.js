@@ -78,12 +78,6 @@ function scheduleCaptionPreview() {
     previewTimer = setTimeout(() => void refreshCaptionPreview(), 400);
 }
 
-function updateChosenCaptionStyle() {
-    const style = selectedCaptionStyle();
-    const label = document.getElementById('captionChosenStyle');
-    if (label) label.textContent = `${document.getElementById('captionStylePreset').selectedOptions[0].textContent}, ${style.size}, ${style.position}`;
-}
-
 function transcriptLabel() {
     const selected = document.getElementById('transcriptVersionSelect')?.selectedOptions[0];
     return selected?.value ? selected.textContent : state.currentTranscriptSource || 'Current transcript';
@@ -180,7 +174,7 @@ export async function downloadCaptionFile(format) {
         const link = document.createElement('a');
         link.href = url;
         link.download = `${filename}.${format}`;
-        const dialog = document.getElementById('transcriptOptionsDialog');
+        const dialog = document.getElementById('transcriptDownloadDialog');
         (dialog?.open ? dialog : document.body).append(link);
         link.click();
         link.remove();
@@ -194,21 +188,20 @@ export async function downloadCaptionFile(format) {
 
 export function initCaptionExport() {
     document.getElementById('exportCaptionedVideoBtn')?.addEventListener('click', () => void exportCaptionedVideo());
-    document.getElementById('transcriptOptionsDialog')?.addEventListener('toggle', () => {
-        if (document.getElementById('transcriptOptionsDialog').open) {
-            void refreshCaptionExports();
-        }
-    });
     document.getElementById('openCaptionStyleBtn')?.addEventListener('click', () => {
         document.getElementById('captionStyleDialog').showModal();
         void refreshCaptionPreview();
+        void refreshCaptionExports();
+    });
+    document.getElementById('downloadTranscriptBtn')?.addEventListener('click', () => {
+        document.getElementById('downloadTranscriptLabel').textContent = `Source: ${transcriptLabel()}`;
+        document.getElementById('transcriptDownloadDialog').showModal();
     });
     document.getElementById('captionStyleDialog')?.addEventListener('close', () => {
         ++previewGeneration;
         previewController?.abort();
         clearTimeout(previewTimer);
         clearCaptionPreview();
-        updateChosenCaptionStyle();
     });
     ['captionStylePreset', 'captionStyleSize', 'captionStylePosition'].forEach(id => {
         document.getElementById(id)?.addEventListener('change', scheduleCaptionPreview);
@@ -217,7 +210,7 @@ export function initCaptionExport() {
     document.getElementById('downloadCaptionSrtBtn')?.addEventListener('click', () => void downloadCaptionFile('srt'));
     document.getElementById('downloadCaptionVttBtn')?.addEventListener('click', () => void downloadCaptionFile('vtt'));
     setInterval(() => {
-        if (document.getElementById('transcriptOptionsDialog')?.open) {
+        if (document.getElementById('captionStyleDialog')?.open) {
             void refreshCaptionExports();
             void refreshSavedExports();
         }

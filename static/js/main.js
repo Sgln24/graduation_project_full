@@ -306,6 +306,7 @@ function initApp() {
         ['summaryOptionsBtn', 'summaryOptionsPanel'],
         ['transcriptOptionsBtn', 'transcriptOptionsDialog'],
         ['openCaptionStyleBtn', 'captionStyleDialog'],
+        ['downloadTranscriptBtn', 'transcriptDownloadDialog'],
         ['exportChaptersBtn', 'exportOptionsDialog'],
         ['detectScenesBtn', 'sceneDetectionOptionsDialog'],
         ['settingsBtn', 'settingsModal'],
