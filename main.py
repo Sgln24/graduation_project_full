@@ -1974,10 +1974,13 @@ async def start_caption_video_job(video_id: str, request: Request):
     try:
         captions = validate_captions(options.get("transcript"))
         style = validate_caption_style(options.get("style"))
+        language = options.get("caption_language") or detect_transcript_language(captions)
+        if not isinstance(language, str) or not re.fullmatch(r"[A-Za-z]{2}", language):
+            raise ValueError("Caption language must be a two-letter code.")
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     label = str(options.get("transcript_label") or "Selected transcript")[:200]
-    filename = str(options.get("filename") or "video")[:150]
+    filename = f"{caption_filename(str(options.get('filename') or 'video')[:150])[:97]}_{language.upper()}.mp4"
 
     async def generate(video_id, options, step, artifacts, workspace):
         step(f"Caption source: {label}")

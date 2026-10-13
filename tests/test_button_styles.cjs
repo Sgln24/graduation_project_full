@@ -16,7 +16,7 @@ const actions = [
     'detectScenesBtn', 'refreshSlideTitlesBtn', 'downloadScreenshotsBtn',
     'downloadSlidesPdfBtn', 'downloadSlideTextWordBtn',
     'openCaptionStyleBtn', 'downloadTranscriptBtn',
-    'savedCaptionVideosBtn', 'refreshCaptionVideosBtn',
+    'downloadSavedCaptionVideoBtn', 'refreshCaptionVideosBtn',
 ];
 for (const id of options) {
     assert(buttons.get(id)?.includes('btn-options'), `${id} must remain an options control`);
@@ -44,6 +44,11 @@ for (const id of ['openCaptionStyleBtn', 'downloadTranscriptBtn', 'exportCaption
 }
 assert(dialog('captionStyleDialog').includes('id="exportCaptionedVideoBtn"'));
 assert(dialog('captionStyleDialog').includes('id="captionStylePreview"'));
+assert(dialog('captionStyleDialog').includes('id="savedCaptionVideoSelect"'));
+assert(dialog('captionStyleDialog').includes('<option value="outline" selected>'));
+assert(dialog('captionStyleDialog').includes('<option value="medium" selected>'));
+assert.equal([...html.matchAll(/id="savedCaptionVideoSelect"/g)].length, 1, 'Only one saved video dropdown');
+assert(!html.includes('id="savedCaptionVideosDialog"'), 'No duplicate saved-video popup');
 for (const id of ['downloadCaptionSrtBtn', 'downloadCaptionVttBtn']) {
     assert(dialog('transcriptDownloadDialog').includes(`id="${id}"`), 'Formats belong in the download chooser');
 }

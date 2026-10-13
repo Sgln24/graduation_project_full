@@ -20,7 +20,7 @@ const ids = {};
  'captionStylePreset', 'captionStyleSize', 'captionStylePosition', 'captionStylePreview',
  'captionPreviewStatus', 'refreshCaptionPreviewBtn', 'captionStyleDialog',
  'openCaptionStyleBtn', 'downloadTranscriptBtn', 'transcriptDownloadDialog', 'downloadTranscriptLabel',
- 'savedCaptionVideosBtn', 'savedCaptionVideosDialog', 'savedCaptionVideosList', 'refreshCaptionVideosBtn']
+ 'savedCaptionVideoSelect', 'downloadSavedCaptionVideoBtn', 'savedCaptionVideosStatus', 'refreshCaptionVideosBtn', 'captionLanguage']
     .forEach(id => ids[id] = element());
 ids.transcriptVersionSelect.selectedOptions = [{value: 'de-version', textContent: 'German translation'}];
 ids.captionStylePreset.value = 'yellow';
@@ -54,6 +54,7 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.equal(payload.transcript_label, 'German translation');
     assert.equal(payload.transcript[0].text, 'Gewählte Version');
     assert.deepEqual(payload.style, {preset:'yellow', size:'large', position:'top'});
+    assert.equal(payload.caption_language, 'de');
     state.currentTranscript[0].text = 'Changed later';
     state.currentVideoId = 'other';
     await context.exportCaptionedVideo();
@@ -77,8 +78,7 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
         {title: 'Chapter export', status: 'complete'},
     ]});
     await refresh;
-    assert.equal(ids.captionVideoProgress.children.length, 1);
-    assert.equal(ids.captionVideoProgress.children[0].children[0].href, '/export_jobs/job/download');
+    assert.equal(ids.captionVideoProgress.children.length, 0, 'Completed copies must appear only in the dropdown');
     const stale = context.refreshCaptionExports();
     state.currentVideoId = 'other';
     reply(requests[3], {exports: [{title: 'Captioned video - Wrong video', status: 'complete', steps: []}]});
@@ -107,42 +107,63 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     ids.openCaptionStyleBtn.listeners.click();
     assert.equal(ids.captionStyleDialog.open, true);
     assert.match(ids.captionPreviewStatus.textContent, /choose a transcript/);
-    assert.equal(requests.length, 7);
+    assert.equal(requests.length, 8);
     assert(requests[6].url.startsWith('/saved_exports/'), 'Opening captions only refreshes saved jobs, not video encoding');
     reply(requests[6], {exports: []});
+    reply(requests[7], {exports: []});
     state.currentTranscript = [{start: 1, duration: 2, text: 'Chosen caption'}];
     ids.openCaptionStyleBtn.listeners.click();
-    assert.equal(requests[7].url, '/caption_preview/other');
-    assert.equal(JSON.parse(requests[7].options.body).transcript[0].text, 'Chosen caption');
-    assert.equal(requests[8].url, '/saved_exports/other');
-    assert.equal(requests.length, 9, 'Opening the caption dialog must not start encoding');
-    requests[7].resolve({ok: true, blob: async () => ({})});
-    reply(requests[8], {exports: []});
-    ids.savedCaptionVideosBtn.listeners.click();
-    assert.equal(ids.savedCaptionVideosDialog.open, true);
-    assert.equal(requests[9].url, '/saved_caption_videos', 'Saved copies must include every lecture');
-    reply(requests[9], {exports: [
+    assert.equal(requests[8].url, '/caption_preview/other');
+    assert.equal(JSON.parse(requests[8].options.body).transcript[0].text, 'Chosen caption');
+    assert.equal(requests[9].url, '/saved_exports/other');
+    assert.equal(requests.length, 11, 'Opening the caption dialog must not start encoding');
+    requests[8].resolve({ok: true, blob: async () => ({})});
+    reply(requests[9], {exports: []});
+    assert.equal(requests[10].url, '/saved_caption_videos', 'Saved copies must include every lecture');
+    reply(requests[10], {exports: [
         {title: 'Captioned video - Older transcript', filename: 'Previous-lecture-captioned.mp4',
-            status: 'complete', download_url: '/export_jobs/old/download', video_id: 'previous', created_at: 1},
+            id: 'old', status: 'complete', download_url: '/export_jobs/old/download', video_id: 'previous', created_at: 1},
+        {title: 'Captioned video - Running', id: 'running', status: 'running', steps: [{message: 'Encoding 50%'}]},
     ]});
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(ids.savedCaptionVideosList.children.length, 1);
-    assert.match(ids.savedCaptionVideosList.children[0].textContent, /Previous-lecture-captioned.mp4/);
-    assert.equal(ids.savedCaptionVideosList.children[0].children.at(-1).href, '/export_jobs/old/download');
+    assert.equal(ids.savedCaptionVideoSelect.children.length, 3);
+    assert.match(ids.savedCaptionVideoSelect.children[1].textContent, /Previous-lecture-captioned.mp4/);
+    ids.savedCaptionVideoSelect.value = 'running';
+    ids.savedCaptionVideoSelect.listeners.change();
+    assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, true);
+    assert.equal(ids.savedCaptionVideosStatus.textContent, 'Encoding 50%');
+    ids.savedCaptionVideoSelect.value = 'old';
+    ids.savedCaptionVideoSelect.listeners.change();
+    assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, false);
+    ids.downloadSavedCaptionVideoBtn.listeners.click();
+    assert.equal(links.at(-1).href, '/export_jobs/old/download');
+    assert.equal(links.at(-1).download, 'Previous-lecture-captioned.mp4');
+    assert(ids.captionStyleDialog.children.includes(links.at(-1)), 'Download must be inside caption modal');
+    const preserving = context.refreshSavedCaptionVideos();
+    reply(requests[11], {exports: [{id: 'old', title: 'Saved', status: 'complete', filename: 'Old.mp4'}]});
+    await preserving;
+    assert.equal(ids.savedCaptionVideoSelect.value, 'old', 'Refresh must preserve selected copy');
     const empty = context.refreshSavedCaptionVideos();
-    reply(requests[10], {exports: []});
+    reply(requests[12], {exports: []});
     await empty;
-    assert.match(ids.savedCaptionVideosList.textContent, /No captioned video copies/);
+    assert.match(ids.savedCaptionVideosStatus.textContent, /No captioned videos/);
+    assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, true);
     const failed = context.refreshSavedCaptionVideos();
-    requests[11].reject(new Error('Offline'));
+    requests[13].reject(new Error('Offline'));
     await failed;
-    assert.match(ids.savedCaptionVideosList.textContent, /Could not load.*Offline/);
+    assert.match(ids.savedCaptionVideosStatus.textContent, /Could not load.*Offline/);
     const earlier = context.refreshSavedCaptionVideos();
     const newer = context.refreshSavedCaptionVideos();
-    reply(requests[13], {exports: []});
+    reply(requests[15], {exports: []});
     await newer;
-    reply(requests[12], {exports: [{title: 'Captioned video - Stale', status: 'complete'}]});
+    reply(requests[14], {exports: [{title: 'Captioned video - Stale', status: 'complete'}]});
     await earlier;
-    assert.match(ids.savedCaptionVideosList.textContent, /No captioned video copies/, 'Stale history must not replace newer results');
+    assert.match(ids.savedCaptionVideosStatus.textContent, /No captioned videos/, 'Stale history must not replace newer results');
+    ids.captionLanguage.value = 'fr';
+    state.currentVideoId = 'video';
+    const french = context.exportCaptionedVideo();
+    assert.equal(JSON.parse(requests[16].options.body).caption_language, 'fr');
+    requests[16].resolve({ok: false, json: async () => ({detail: 'Unavailable'})});
+    await french;
     console.log('PASS: selected transcript snapshot, sidecar downloads, saved jobs, races, and input guards');
 })().catch(error => { console.error(error); process.exitCode = 1; });

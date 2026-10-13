@@ -19,7 +19,7 @@ def validate_caption_style(options=None):
     if not isinstance(options, dict):
         raise ValueError("Caption style must be an object.")
     style = {
-        "preset": options.get("preset", "box"),
+        "preset": options.get("preset", "outline"),
         "size": options.get("size", "medium"),
         "position": options.get("position", "bottom"),
     }

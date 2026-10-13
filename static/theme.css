@@ -378,17 +378,12 @@ code {
     margin-inline-start: 6px;
 }
 
-.saved-caption-videos-list p {
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow-wrap: anywhere;
+.saved-caption-videos-control {
+    width: 100%;
 }
 
-.saved-caption-videos-list small,
-.saved-caption-videos-list .btn {
-    display: block;
-    margin-top: 6px;
+#savedCaptionVideosStatus {
+    overflow-wrap: anywhere;
 }
 
 #uploadVideoBtn {

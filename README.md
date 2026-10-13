@@ -86,14 +86,21 @@ These are the changes specifically described as fixes to the inherited project. 
   versions, then click **Add captions to video** in the Transcript toolbar.
   Choose the appearance, inspect the preview, then click **Create video copy**.
   The current transcript is captured when you create the copy, so later version
-  changes do not alter the export. **Saved captioned videos** in the Transcript
-  toolbar lists copies from all lectures, newest first, with filenames, creation
-  dates and **Download MP4** links. It works without opening a preview or selecting
-  the original lecture. Copies of the current lecture also appear in the caption
-  dialog and **Saved exports**. Jobs and completed downloads remain available after a page
+  changes do not alter the export. **Previously generated captioned videos** at
+  the top of **Add captions to video** is a dropdown listing copies from all lectures, newest first, with
+  filenames, creation dates and status. Select a completed copy and click its
+  download button; the refresh button reloads the list. The original lecture
+  does not need to be selected. Copies also remain in **Saved exports**.
+  Jobs and completed downloads remain available after a page
   reload; a server restart interrupts unfinished encoding. The original video is
   never overwritten. Choose white-on-black-box, white outlined, or yellow outlined
-  captions, small/medium/large text, and top/bottom positioning in that dialog.
+  captions. New video filenames include the caption language as an uppercase
+  two-letter code, for example `Lecture_DE-captioned.mp4`. Automatic uses the
+  selected translation language or the existing transcript-language detector;
+  override it in **Caption language** when needed. This labels the file, not a
+  request to translate its captions. Older saved copies keep their original names.
+  Choose small/medium/large text and top/bottom positioning in that dialog.
+  The default is white text with a dark outline, medium size, at the bottom.
   This dialog shows a real FFmpeg-rendered preview on the selected video's
   frame before exporting.
   Opening the dialog or changing options does not start a video export.
@@ -189,7 +196,7 @@ These are the changes specifically described as fixes to the inherited project. 
   from starting work.
   The right panel is narrow, and option dialogs and Settings open over it so
   the video stays visible. Caption previews, transcript downloads and saved
-  captioned-video history use the same side-panel placement and width on desktop.
+  caption settings use the same side-panel placement and width on desktop.
   Narrow-screen popups share one position near the content panel, keeping at
   least 248 pixels of usable height when the panel starts near the screen bottom.
   Detection

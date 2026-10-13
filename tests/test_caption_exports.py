@@ -2,6 +2,7 @@ import ast
 import asyncio
 import hashlib
 import json
+import re
 import subprocess
 import tempfile
 import time
@@ -30,7 +31,7 @@ class CaptionTests(unittest.TestCase):
                         {"preset": "box',FontSize=999"}):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 validate_caption_style(options)
-        self.assertEqual(validate_caption_style(), {"preset": "box", "size": "medium", "position": "bottom"})
+        self.assertEqual(validate_caption_style(), {"preset": "outline", "size": "medium", "position": "bottom"})
         text = " ".join(f"word{index}" for index in range(100))
         captions = validate_captions([{"start": 2, "duration": 20, "text": text}])
         for size in ("small", "medium", "large"):
@@ -43,7 +44,8 @@ class CaptionTests(unittest.TestCase):
                 self.assertAlmostEqual(before["start"] + before["duration"], after["start"])
         self.assertIn("Alignment=6", caption_filter(validate_caption_style({"position": "top"})))
         self.assertIn("PrimaryColour=&H0000FFFF", caption_filter(validate_caption_style({"preset": "yellow"})))
-        self.assertIn("BorderStyle=3", caption_filter(validate_caption_style()))
+        self.assertIn("BorderStyle=1", caption_filter(validate_caption_style()))
+        self.assertIn("BorderStyle=3", caption_filter(validate_caption_style({"preset": "box"})))
 
     def test_burned_and_sidecar_cues_share_missing_duration_handling(self):
         captions = validate_captions([
@@ -95,8 +97,8 @@ class CaptionTests(unittest.TestCase):
         source = Path(__file__).resolve().parents[1] / "main.py"
         functions = [
             node for node in ast.parse(source.read_text(encoding="utf-8")).body
-            if isinstance(node, ast.AsyncFunctionDef)
-            and node.name in {"start_caption_video_job", "download_caption_file", "caption_preview", "saved_caption_videos"}
+            if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
+            and node.name in {"start_caption_video_job", "download_caption_file", "caption_preview", "saved_caption_videos", "detect_transcript_language"}
         ]
         captured = []
 
@@ -128,6 +130,7 @@ class CaptionTests(unittest.TestCase):
             "caption_text": caption_text, "caption_filename": caption_filename,
             "video_duration": duration, "render_captioned_video": render,
             "validate_caption_style": validate_caption_style,
+            "re": re,
             "video_processor": SimpleNamespace(get_video_path=lambda video_id: "/original.mp4" if video_id == "video" else None),
             "export_jobs": Jobs(),
         }
@@ -145,6 +148,18 @@ class CaptionTests(unittest.TestCase):
         args = asyncio.run(captured[0][2]("video", {}, lambda message: None, None, Path("workspace")))
         self.assertEqual(args[1][0]["text"], "Chosen translation")
         self.assertEqual(args[-1], validate_caption_style())
+        self.assertEqual(args[2], "lecture_EN.mp4")
+        for language in ("de", "EN", "ar", "pl", "fr"):
+            response = client.post("/caption_video_jobs/video", json={**payload, "caption_language": language})
+            self.assertEqual(response.status_code, 200)
+            export_args = asyncio.run(captured[-1][2]("video", {}, lambda message: None, None, Path("workspace")))
+            self.assertEqual(export_args[2], f"lecture_{language.upper()}.mp4")
+        long_name = "a" * 140 + ".mp4"
+        client.post("/caption_video_jobs/video", json={**payload, "filename": long_name, "caption_language": "de"})
+        export_args = asyncio.run(captured[-1][2]("video", {}, lambda message: None, None, Path("workspace")))
+        self.assertTrue(caption_filename(export_args[2]).endswith("_DE"))
+        for invalid in ("German", "../de", 123, True):
+            self.assertEqual(client.post("/caption_video_jobs/video", json={**payload, "caption_language": invalid}).status_code, 400)
         payload["transcript"][0]["text"] = "Changed later"
         self.assertEqual(args[1][0]["text"], "Chosen translation")
         for format in ("srt", "vtt"):

@@ -215,7 +215,6 @@
                             <div class="transcript-export-actions">
                                 <button id="openCaptionStyleBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-film" aria-hidden="true"></i> Add captions to video</button>
                                 <button id="downloadTranscriptBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download transcript</button>
-                                <button id="savedCaptionVideosBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-folder-open" aria-hidden="true"></i> Saved captioned videos</button>
                             </div>
                             <dialog id="transcriptOptionsDialog" class="options-dialog">
                                 <form method="dialog">
@@ -293,13 +292,32 @@
                                         <h2 id="captionStyleHeading">Add captions to video</h2>
                                         <button class="dialog-close" type="submit" aria-label="Close caption preview">&times;</button>
                                     </div>
+                                    <label for="savedCaptionVideoSelect">Previously generated captioned videos</label>
+                                    <div class="transcript-versions saved-caption-videos-control">
+                                        <select id="savedCaptionVideoSelect" aria-label="Saved captioned videos" title="Saved captioned videos from all lectures">
+                                            <option value="">Saved captioned videos</option>
+                                        </select>
+                                        <button id="downloadSavedCaptionVideoBtn" class="btn btn-secondary btn-action btn-icon" type="button" disabled title="Download selected captioned video" aria-label="Download selected captioned video"><i class="fas fa-download" aria-hidden="true"></i></button>
+                                        <button id="refreshCaptionVideosBtn" class="btn btn-secondary btn-action btn-icon" type="button" title="Refresh saved captioned videos" aria-label="Refresh saved captioned videos"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
+                                    </div>
+                                    <small id="savedCaptionVideosStatus" role="status" aria-live="polite"></small>
                                     <p id="captionTranscriptLabel">Caption source: the current transcript or translation</p>
                                     <fieldset class="caption-style-options">
                                         <legend>Burned-in caption appearance</legend>
+                                        <label for="captionLanguage">Caption language (for the filename)</label>
+                                        <select id="captionLanguage">
+                                            <option value="">Automatic (selected translation or detected transcript language)</option>
+                                            <option value="en">English (EN)</option>
+                                            <option value="de">German (DE)</option>
+                                            <option value="ar">Arabic (AR)</option>
+                                            <option value="pl">Polish (PL)</option>
+                                            <option value="fr">French (FR)</option>
+                                            <option value="es">Spanish (ES)</option>
+                                        </select>
                                         <label for="captionStylePreset">Style</label>
                                         <select id="captionStylePreset">
-                                            <option value="box" selected>White text on a black box (high contrast)</option>
-                                            <option value="outline">White text with a dark outline (minimal)</option>
+                                            <option value="box">White text on a black box (high contrast)</option>
+                                            <option value="outline" selected>White text with a dark outline (minimal)</option>
                                             <option value="yellow">Yellow text with a dark outline</option>
                                         </select>
                                         <label for="captionStyleSize">Text size</label>
@@ -323,22 +341,7 @@
                                         <button class="btn btn-secondary" type="submit">Close</button>
                                         <button id="exportCaptionedVideoBtn" class="btn btn-primary" type="button"><i class="fas fa-film" aria-hidden="true"></i> Create video copy</button>
                                     </div>
-                                    <h3>Captioned copies of this video</h3>
                                     <div id="captionVideoProgress" role="status" aria-live="polite"></div>
-                                </form>
-                            </dialog>
-                            <dialog id="savedCaptionVideosDialog" class="options-dialog" aria-labelledby="savedCaptionVideosHeading">
-                                <form method="dialog">
-                                    <div class="dialog-header">
-                                        <h2 id="savedCaptionVideosHeading">Saved captioned videos</h2>
-                                        <button class="dialog-close" type="submit" aria-label="Close saved captioned videos">&times;</button>
-                                    </div>
-                                    <p>Captioned video copies from all lectures, newest first. Downloading a saved copy does not regenerate it.</p>
-                                    <button id="refreshCaptionVideosBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-sync-alt" aria-hidden="true"></i> Refresh</button>
-                                    <div id="savedCaptionVideosList" class="saved-caption-videos-list" role="status" aria-live="polite"></div>
-                                    <div class="dialog-actions">
-                                        <button class="btn btn-secondary" type="submit">Close</button>
-                                    </div>
                                 </form>
                             </dialog>
                             <dialog id="transcriptDownloadDialog" class="options-dialog" aria-labelledby="transcriptDownloadHeading">
