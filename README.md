@@ -118,7 +118,9 @@ These are the changes specifically described as fixes to the inherited project. 
   **Use in editor** loads a completed copy without changing the lecture ID,
   transcripts, chapters, slide detections or OCR. Playback position is retained.
   The editor loads matching WebVTT tracks for selectable copies so browser playback
-  does not depend on native MP4 subtitle support. Chapter and section clips use the
+  does not depend on native MP4 subtitle support. Only one caption track displays
+  at a time; switching sources disables old tracks before removing them, preventing
+  stale caption layers from remaining on a paused video. Chapter and section clips use the
   selected video copy and retain all its embedded subtitle tracks. **Use original**
   switches back without deleting copies or analysis. Source selection lasts until
   you load another video or reload the page; saved copies remain available.

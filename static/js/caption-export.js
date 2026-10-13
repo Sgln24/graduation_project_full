@@ -19,6 +19,7 @@ let previewController = null;
 let previewUrl = null;
 let previewTimer = null;
 let switchingMedia = false;
+let visibleCopyTrack = null;
 
 function selectedCaptionStyle() {
     return {
@@ -33,6 +34,28 @@ export function selectedMediaExportId(videoId) {
     const id = player?.dataset.captionExportId;
     return id && player.dataset.captionVideoId === videoId
         && player.getAttribute('src') === `/caption_copy/${encodeURIComponent(videoId)}/${id}` ? id : null;
+}
+
+function clearCopyCaptions(player) {
+    player.querySelectorAll('track[data-caption-copy]').forEach(element => {
+        // Chromium can keep drawing active cues from a detached, showing track.
+        element.track.mode = 'disabled';
+        element.default = false;
+        element.remove();
+    });
+    visibleCopyTrack = null;
+}
+
+function syncCaptionVisibility(player) {
+    if (!player.getAttribute('src')?.startsWith('/caption_copy/')) return;
+    const showing = Array.from(player.textTracks).filter(track =>
+        (track.kind === 'subtitles' || track.kind === 'captions') && track.mode === 'showing');
+    // A browser may restore its remembered language as well as the default track.
+    const selected = showing.includes(visibleCopyTrack) ? visibleCopyTrack : showing[0];
+    for (const track of showing) {
+        if (track !== selected) track.mode = 'disabled';
+    }
+    visibleCopyTrack = selected || null;
 }
 
 async function useVideoCopy(job = null) {
@@ -53,6 +76,8 @@ async function useVideoCopy(job = null) {
     const at = player.currentTime;
     const playbackRate = player.playbackRate;
     const wasPlaying = !player.paused;
+    const previousTracks = Array.from(player.querySelectorAll('track[data-caption-copy]'),
+        element => ({element, mode: element.track.mode, default: element.default}));
     let sourceChanged = false;
     try {
         if (job) {
@@ -74,12 +99,14 @@ async function useVideoCopy(job = null) {
             const timeout = setTimeout(() => { cleanup(); reject(new Error('Video loading timed out.')); }, 30000);
             player.addEventListener('loadedmetadata', loaded);
             player.addEventListener('error', failed);
+            clearCopyCaptions(player);
             player.src = src;
             sourceChanged = true;
             player.load();
         });
         if (videoId !== state.currentVideoId || player.getAttribute('src') !== src) return;
-        player.querySelectorAll('track[data-caption-copy]').forEach(track => track.remove());
+        clearCopyCaptions(player);
+        const copyTracks = [];
         for (const [index, item] of (job?.caption_tracks || []).entries()) {
             const track = document.createElement('track');
             track.kind = 'subtitles';
@@ -89,7 +116,11 @@ async function useVideoCopy(job = null) {
             track.dataset.captionCopy = '';
             track.default = index === 0;
             player.append(track);
+            copyTracks.push(track.track);
         }
+        visibleCopyTrack = copyTracks[0] || null;
+        copyTracks.forEach((track, index) => { track.mode = index === 0 ? 'showing' : 'disabled'; });
+        syncCaptionVisibility(player);
         player.dataset.captionExportId = job?.id || '';
         player.dataset.captionVideoId = videoId;
         player.currentTime = Math.min(at, Math.max(0, player.duration - 0.1));
@@ -99,8 +130,15 @@ async function useVideoCopy(job = null) {
     } catch (error) {
         if (videoId !== state.currentVideoId) return;
         if (sourceChanged && !selectedMediaExportId(videoId)) {
+            clearCopyCaptions(player);
             player.src = previousSource;
             player.load();
+            visibleCopyTrack = previousTracks.find(previous => previous.mode === 'showing')?.element.track || null;
+            for (const previous of previousTracks) {
+                previous.element.default = previous.default;
+                player.append(previous.element);
+                previous.element.track.mode = previous.mode;
+            }
         }
         status.textContent = `Could not switch video: ${error.message}`;
         showError(status.textContent);
@@ -481,9 +519,10 @@ export async function downloadCaptionFile(format) {
 
 export function initCaptionExport() {
     const player = document.querySelector('video');
+    player?.textTracks?.addEventListener('change', () => syncCaptionVisibility(player));
     player?.addEventListener('loadstart', () => {
         if (!player.getAttribute('src')?.startsWith('/caption_copy/')) {
-            player.querySelectorAll('track[data-caption-copy]').forEach(track => track.remove());
+            clearCopyCaptions(player);
             delete player.dataset.captionExportId;
             delete player.dataset.captionVideoId;
         }
