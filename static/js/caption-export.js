@@ -72,7 +72,7 @@ export async function refreshCaptionPreview() {
         const image = document.getElementById('captionStylePreview');
         image.src = previewUrl;
         image.hidden = false;
-        status.textContent = `Export preview: ${style.preset}, ${style.size}, ${style.position}.`;
+        status.textContent = '';
     } catch (error) {
         if (error.name === 'AbortError' || generation !== previewGeneration
             || videoId !== state.currentVideoId || transcriptSource !== state.currentTranscript) return;
@@ -194,7 +194,7 @@ export async function refreshSavedCaptionVideos() {
         });
         select.value = completed.some(job => job.id === selected) ? selected : completed[0]?.id || '';
         updateSavedCaptionSelection();
-        if (!completed.length) status.textContent = 'No completed captioned videos for this video yet. Unfinished copies are not available to download.';
+        if (!completed.length) status.textContent = 'No completed captioned videos yet.';
     } catch (error) {
         if (generation === savedVideosGeneration && videoId === state.currentVideoId) {
             status.textContent = `Could not load saved captioned videos: ${error.message}`;
@@ -208,7 +208,7 @@ function updateSavedCaptionSelection() {
     document.getElementById('downloadSavedCaptionVideoBtn').disabled = downloading || !job || job.status !== 'complete';
     if (downloading) return;
     document.getElementById('savedCaptionVideosStatus').textContent = !job ? ''
-        : job.status === 'complete' ? job.title
+        : job.status === 'complete' ? ''
         : job.status === 'error' ? `Export failed: ${job.error}`
         : job.steps?.at(-1)?.message || job.status;
 }

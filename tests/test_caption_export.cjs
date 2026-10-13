@@ -106,6 +106,7 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     await preview;
     assert.equal(ids.captionStylePreview.hidden, false);
     assert.equal(ids.captionStylePreview.src, 'blob:captions');
+    assert.equal(ids.captionPreviewStatus.textContent, '', 'A ready preview should not repeat all selected options');
     ids.captionStyleDialog.listeners.close();
     assert.equal(ids.captionStylePreview.hidden, true, 'Closing the style dialog clears the preview');
     const oldPreview = context.refreshCaptionPreview();
@@ -151,6 +152,7 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     ids.savedCaptionVideoSelect.value = 'old';
     ids.savedCaptionVideoSelect.listeners.change();
     assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, false);
+    assert.equal(ids.savedCaptionVideosStatus.textContent, '', 'Do not repeat the saved copy title below its dropdown');
     const savedDownload = ids.downloadSavedCaptionVideoBtn.listeners.click();
     assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, true);
     assert.equal(requests.at(-1).url, '/export_jobs/old/download');

@@ -88,7 +88,7 @@ These are the changes specifically described as fixes to the inherited project. 
   it also changes the transcript shown on screen.
   Choose the appearance, inspect the preview, then click **Create video copy**.
   The current transcript is captured when you create the copy, so later version
-  changes do not alter the export. **Previously generated captioned videos** at
+  changes do not alter the export. **Saved copies** at
   the top of **Add captions to video** is a dropdown listing copies of the current video only, newest first, with
   filenames and creation dates. Only completed copies appear in the dropdown;
   the newest is selected automatically. Click **Download MP4** to save the selected
@@ -107,7 +107,7 @@ These are the changes specifically described as fixes to the inherited project. 
   Choose small/medium/large text and top/bottom positioning in that dialog.
   The default is medium white text in a black box, at the bottom.
   This dialog shows a real FFmpeg-rendered preview on the selected video's
-  frame before exporting. **Open large preview at current video time** opens a
+  frame before exporting. **Enlarge preview** opens a
   large, viewport-fitted view; closing it returns to the side-panel options.
   Preview captions scale with the displayed video frame; a small thumbnail is
   not the final video's absolute text size. The enlarged preview uses the same
@@ -209,6 +209,10 @@ These are the changes specifically described as fixes to the inherited project. 
   Side-panel option dialogs are non-modal, so video controls and both resize
   handles remain usable while options are open. Escape closes the open options.
   Only the explicitly enlarged caption preview is modal.
+  Interface labels are kept short. Caption, slide-detection and device
+  explanations are available in expandable help sections; optional transcription
+  prompts and speaker settings sit under **Advanced transcription options**.
+  Progress, errors and required setup feedback remain available.
   Narrow-screen popups share one position near the content panel, keeping at
   least 248 pixels of usable height when the panel starts near the screen bottom.
   Detection

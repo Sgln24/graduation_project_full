@@ -1264,11 +1264,67 @@ body .search-highlight.active {
 
 .caption-style-options {
     display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     gap: 8px;
+    align-items: center;
     min-width: 0;
     border: 1px solid var(--border-color, #8993a3);
     border-radius: 8px;
     padding: 12px;
+}
+
+.caption-style-options > button,
+.caption-style-options > p,
+.caption-style-options > img {
+    grid-column: 1 / -1;
+}
+
+.ui-disclosure {
+    margin: 8px 0;
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-2);
+}
+
+.ui-disclosure > summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-1);
+}
+
+.ui-disclosure > summary:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 3px;
+}
+
+.ui-disclosure p {
+    margin: 8px 0;
+    line-height: 1.5;
+}
+
+.disclosure-content {
+    display: grid;
+    gap: 8px;
+    padding-top: 8px;
+}
+
+.options-dialog [role="status"]:empty {
+    display: none;
+}
+
+.caption-preview-dialog form > label {
+    display: block;
+    margin: 10px 0 5px;
+    font-weight: 600;
+}
+
+.caption-preview-dialog .caption-style-options {
+    margin-top: 12px;
+}
+
+.transcript-download-formats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .transcript-export-actions {

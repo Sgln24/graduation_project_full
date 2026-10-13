@@ -240,11 +240,14 @@
                                     </optgroup>
                                 </select>
                                 <small id="transcriptModelHelp">The default adapts to this session's GPU and API keys.</small>
-                                <label for="transcriptPrompt">Context or spelling prompt (optional)</label>
+                                <details class="ui-disclosure">
+                                <summary>Advanced transcription options</summary>
+                                <div class="disclosure-content">
+                                <label for="transcriptPrompt">Context prompt (optional)</label>
                                 <textarea id="transcriptPrompt" rows="2" maxlength="2000" placeholder="Example: SAP lecture about S/4HANA and Fiori; lecturer Dr. MÃ¼ller. Preserve acronyms and product names."></textarea>
-                                <small>Helps the model recognize names, technical terms and the lecture's language. Local Whisper and Groq use roughly the last 800 characters.</small>
-                                <label><input type="checkbox" id="transcriptDiarization"> Identify different speakers when regenerating</label>
-                                <button id="identifySpeakersBtn" class="btn btn-secondary btn-action" type="button" title="Keeps the current transcript text and only adds speaker labels (also to its translations)">Identify speakers in the current transcript</button>
+                                <small>Names and terms to recognize.</small>
+                                <label><input type="checkbox" id="transcriptDiarization"> Identify speakers</label>
+                                <button id="identifySpeakersBtn" class="btn btn-secondary btn-action" type="button" title="Keeps the current transcript text and only adds speaker labels (also to its translations)">Label current speakers</button>
                                 <small id="speakerDiarizationHelp">
                                     <strong id="speakerDiarizationTokenStatus"></strong>
                                     <span id="speakerDiarizationSetup">
@@ -256,6 +259,8 @@
                                     then set <code>HF_TOKEN</code> in the server environment and restart the server.
                                     </span>
                                 </small>
+                                </div>
+                                </details>
                                 <button id="regenerateTranscriptAction" class="btn btn-secondary btn-action" type="button">Regenerate transcript</button>
                                 <div id="speakerNamesPanel" class="speaker-names-panel" hidden></div>
                                 <label for="transcriptFile">Upload transcript file</label>
@@ -292,7 +297,7 @@
                                         <h2 id="captionStyleHeading">Add captions to video</h2>
                                         <button class="dialog-close" type="submit" aria-label="Close caption preview">&times;</button>
                                     </div>
-                                    <label for="savedCaptionVideoSelect">Previously generated captioned videos</label>
+                                    <label for="savedCaptionVideoSelect">Saved copies</label>
                                     <div class="transcript-versions saved-caption-videos-control">
                                         <select id="savedCaptionVideoSelect" aria-label="Saved captioned videos" title="Saved captioned copies of the current video">
                                             <option value="">Saved captioned videos</option>
@@ -301,16 +306,16 @@
                                         <button id="refreshCaptionVideosBtn" class="btn btn-secondary btn-action btn-icon" type="button" title="Refresh saved captioned videos" aria-label="Refresh saved captioned videos"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
                                     </div>
                                     <small id="savedCaptionVideosStatus" role="status" aria-live="polite"></small>
-                                    <label for="captionTranscriptVersionSelect">Transcript for captions</label>
+                                    <label for="captionTranscriptVersionSelect">Transcript</label>
                                     <select id="captionTranscriptVersionSelect" aria-label="Transcript for captions"></select>
-                                    <p id="captionTranscriptLabel">Caption source: the current transcript or translation</p>
+                                    <p id="captionTranscriptLabel" hidden>Caption source: the current transcript or translation</p>
                                     <fieldset class="caption-style-options">
-                                        <legend>Burned-in caption appearance</legend>
+                                        <legend>Appearance</legend>
                                         <label for="captionStylePreset">Style</label>
                                         <select id="captionStylePreset">
-                                            <option value="box" selected>White text on a black box (high contrast)</option>
-                                            <option value="outline">White text with a dark outline (minimal)</option>
-                                            <option value="yellow">Yellow text with a dark outline</option>
+                                            <option value="box" selected>White on black box</option>
+                                            <option value="outline">White with outline</option>
+                                            <option value="yellow">Yellow with outline</option>
                                         </select>
                                         <label for="captionStyleSize">Text size</label>
                                         <select id="captionStyleSize">
@@ -321,14 +326,20 @@
                                         <label for="captionStylePosition">Position</label>
                                         <select id="captionStylePosition">
                                             <option value="bottom" selected>Bottom</option>
-                                            <option value="top">Top (keep the bottom of slides visible)</option>
+                                            <option value="top">Top</option>
                                         </select>
-                                        <button id="refreshCaptionPreviewBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-expand" aria-hidden="true"></i> Open large preview at current video time</button>
-                                        <small>Real FFmpeg-rendered preview using the selected transcript and video frame. If there is no caption at the playhead, the nearest caption is shown. Long cues are split into short, timed captions with at most two lines; split timing is estimated from the original cue duration. SRT/WebVTT downloads keep their original cues.</small>
+                                        <button id="refreshCaptionPreviewBtn" class="btn btn-secondary btn-action" type="button" title="Enlarge the rendered preview at the current video time"><i class="fas fa-expand" aria-hidden="true"></i> Enlarge preview</button>
                                         <p id="captionPreviewStatus" role="status" aria-live="polite"></p>
                                         <img id="captionStylePreview" class="caption-style-preview" alt="Preview of the selected burned-in caption style on the video" hidden>
                                     </fieldset>
-                                    <p>Uses the transcript or translation currently selected on screen. Captions are permanently visible in the MP4 copy; the original stays unchanged. Encoding a long video can take several minutes. You may close this dialog while it runs and find the download in Saved exports.</p>
+                                    <details class="ui-disclosure">
+                                        <summary>Caption help</summary>
+                                        <div class="disclosure-content">
+                                            <p>Creates an MP4 copy with permanent captions. Your original stays unchanged. You can close these options while encoding runs.</p>
+                                            <p>The preview uses the selected transcript and current video frame, or the nearest caption. Enlarge it to judge the text size.</p>
+                                            <p>Long cues use two-line blocks with estimated split timing. SRT and WebVTT keep the original cues.</p>
+                                        </div>
+                                    </details>
                                     <div class="dialog-actions">
                                         <button class="btn btn-secondary" type="submit">Close</button>
                                         <button id="exportCaptionedVideoBtn" class="btn btn-primary" type="button"><i class="fas fa-film" aria-hidden="true"></i> Create video copy</button>
@@ -355,12 +366,9 @@
                                         <button class="dialog-close" type="submit" aria-label="Close transcript download">&times;</button>
                                     </div>
                                     <p id="downloadTranscriptLabel">Source: the current transcript or translation</p>
-                                    <p>Choose a subtitle format. Both include the selected transcript's text and timestamps.</p>
                                     <div class="transcript-download-formats">
-                                        <button id="downloadCaptionSrtBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download SRT (.srt)</button>
-                                        <small>SubRip subtitles for most video players and editors.</small>
-                                        <button id="downloadCaptionVttBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download WebVTT (.vtt)</button>
-                                        <small>Web subtitles for browser-based video players.</small>
+                                        <button id="downloadCaptionSrtBtn" class="btn btn-secondary btn-action" type="button" title="SubRip subtitles for video players and editors"><i class="fas fa-download" aria-hidden="true"></i> SRT</button>
+                                        <button id="downloadCaptionVttBtn" class="btn btn-secondary btn-action" type="button" title="WebVTT subtitles for browser-based players"><i class="fas fa-download" aria-hidden="true"></i> WebVTT</button>
                                     </div>
                                     <div class="dialog-actions">
                                         <button class="btn btn-secondary" type="submit">Close</button>
@@ -393,8 +401,6 @@
                                     <option value="groq:openai/gpt-oss-120b">Groq GPT-OSS 120B (free)</option>
                                     <option value="gpt-4.1-mini">OpenAI GPT-4.1 mini (paid)</option>
                                 </select>
-                                <small>Automatic prefers Groq (<code>GROQ_API_KEY</code>) when configured, then Gemini and OpenAI. An explicit model choice is tried first, with quota/unavailability fallbacks. Do not paste API keys into the browser.</small>
-                                <small>Chapters are written in the language of the open transcript and saved with it. Open a translation first to get chapters in that language.</small>
                                 <label for="chapterStructure">Structure</label>
                                 <select id="chapterStructure">
                                     <option value="sections" selected>Chapters with sections (recommended)</option>
@@ -406,11 +412,17 @@
                                     <option value="balanced" selected>Balanced (~6 min per chapter)</option>
                                     <option value="detailed">Detailed: many short chapters (~3 min)</option>
                                 </select>
-                                <label for="chapterInstructions">Extra instructions for the AI (optional)</label>
+                                <label for="chapterInstructions">Extra instructions (optional)</label>
                                 <textarea id="chapterInstructions" rows="3" maxlength="1000" placeholder="e.g. Focus on exam-relevant topics; keep English technical terms; ignore the organisational part"></textarea>
-                                <small>Very short chapters are merged into a neighbour. Exports reuse the saved sections, so they need no extra AI calls.</small>
-                                <small>Sections follow genuinely separate topics, not a fixed count. Balanced groups related examples, steps and continuations together in the initial generation, without a second AI review. Slide-based export sections follow slide changes instead.</small>
-                                <small>Grouping, fixed intervals, timestamps and document formats are in Export Chapters.</small>
+                                <details class="ui-disclosure">
+                                    <summary>Chapter help</summary>
+                                    <div class="disclosure-content">
+                                        <p>Chapters use the open transcript's language and are saved with it. Select a translation first for chapters in that language.</p>
+                                        <p>Automatic tries Groq, then Gemini and OpenAI. An explicit choice is tried first, with availability fallbacks. Configure API keys on the server, not in the browser.</p>
+                                        <p>Sections follow distinct topics. Related examples and short chapters are merged. Exports reuse saved sections without extra AI calls.</p>
+                                        <p>Grouping, intervals, timestamps and formats are in Export chapters.</p>
+                                    </div>
+                                </details>
                             </div>
                             <button id="exportChaptersBtn" class="btn btn-secondary btn-action" disabled>
                                 <i class="fas fa-download"></i> Export Chapters
@@ -446,9 +458,9 @@
                                     <option value="slides">Slide changes inside each part</option>
                                     <option value="both">Important points and slide changes</option>
                                 </select>
-                                <label title="Each clip starts 1 second early so the first words of a sentence are not cut off"><input type="checkbox" id="exportClipOverlap" checked> Start each clip 1 second early (avoids cut-off words)</label>
-                                <label title="Adds the text read from each slide (OCR) as a bullet list under its chapter. Run text extraction on the slides first."><input type="checkbox" id="exportSlideText"> Add slide content as bullet lists under each chapter (needs slide text extraction)</label>
-                                <label for="exportTitle">Title inside exported summary files (HTML, SCORM, Word, PDF):</label>
+                                <label title="Each clip starts 1 second early so the first words of a sentence are not cut off"><input type="checkbox" id="exportClipOverlap" checked> Start clips 1 second early</label>
+                                <label title="Adds the text read from each slide (OCR) as a bullet list under its chapter. Run text extraction on the slides first."><input type="checkbox" id="exportSlideText"> Include slide text (OCR)</label>
+                                <label for="exportTitle">Document title:</label>
                                 <input type="text" id="exportTitle" placeholder="Suggested title will be used if left blank">
                                 <small id="exportTitleSuggestion">Suggestion: determined from the video and chapter topics</small>
                                 <label for="exportFilename">Export filename:</label>
@@ -457,11 +469,11 @@
                                 <label><input type="checkbox" id="exportImages"> Images</label>
                                 <label><input type="checkbox" id="exportTranscripts"> Transcript files</label>
                                 <label><input type="checkbox" id="exportClips"> Video clips</label>
-                                <label title="Encodes one extra video file per section (takes longer). The webpage shows each section's clip under its heading."><input type="checkbox" id="exportSectionClips"> Separate video clip for each section</label>
-                                <label><input type="checkbox" id="exportWord"> Combined Word: title, image, and transcript</label>
-                                <label><input type="checkbox" id="exportPdf"> Combined PDF: title, image, and transcript</label>
-                                <label><input type="checkbox" id="exportWebpage" checked> HTML webpage package: sections, slides, clips, and transcript</label>
-                                <label><input type="checkbox" id="exportOutline"> Hierarchical outline Word document</label>
+                                <label title="Encodes one extra video file per section (takes longer). The webpage shows each section's clip under its heading."><input type="checkbox" id="exportSectionClips"> Section clips</label>
+                                <label title="Title, images and transcript in one document"><input type="checkbox" id="exportWord"> Word document</label>
+                                <label title="Title, images and transcript in one document"><input type="checkbox" id="exportPdf"> PDF document</label>
+                                <label title="Sections, slides, clips and transcript in a webpage package"><input type="checkbox" id="exportWebpage" checked> HTML webpage</label>
+                                <label><input type="checkbox" id="exportOutline"> Word outline</label>
                                 <label><input type="checkbox" id="exportScorm"> SCORM 1.2 LMS package</label>
                                 <small id="exportAvailabilityNote" role="status"></small>
                             </fieldset>
@@ -492,16 +504,16 @@
                                 <i class="fas fa-film"></i> Detect Slides
                             </button>
                             <button id="refreshSlideTitlesBtn" class="btn btn-secondary btn-action" type="button" title="Reuse the open chapters and sections for slide titles. If missing, generate chapters from the open transcript first.">
-                                <i class="fas fa-heading"></i> Add / refresh slide titles
+                                <i class="fas fa-heading"></i> Refresh titles
                             </button>
-                            <button id="downloadScreenshotsBtn" class="btn btn-secondary btn-action" disabled>
-                                <i class="fas fa-images"></i> Download Screenshots
+                            <button id="downloadScreenshotsBtn" class="btn btn-secondary btn-action" disabled title="Download slide screenshots">
+                                <i class="fas fa-images"></i> Screenshots
                             </button>
-                            <button id="downloadSlidesPdfBtn" class="btn btn-secondary btn-action" disabled>
-                                <i class="fas fa-file-pdf"></i> Export slides as one PDF
+                            <button id="downloadSlidesPdfBtn" class="btn btn-secondary btn-action" disabled title="Download all slides as one PDF">
+                                <i class="fas fa-file-pdf"></i> Slides PDF
                             </button>
                             <button id="downloadSlideTextWordBtn" class="btn btn-secondary btn-action" disabled title="Export all slide text, ordered by chapter, section and slide. Unread slides are OCR'd automatically; this may take a few minutes.">
-                                <i class="fas fa-file-word"></i> Export all slide text as Word
+                                <i class="fas fa-file-word"></i> Slide text Word
                             </button>
                             <dialog id="sceneDetectionOptionsDialog" class="options-dialog">
                                 <form method="dialog">
@@ -523,7 +535,7 @@
                                         <option value="balanced" selected>Balanced</option>
                                         <option value="more">More slides</option>
                                     </select>
-                                    <small>More keeps every build step, Balanced merges small bullet builds, and Fewer merges all builds and quick flips. Full slide changes are kept at every level, so decks without builds can give the same count.</small>
+                                    <details class="ui-disclosure"><summary>Detail levels</summary><p>More keeps each build. Balanced merges small builds. Fewer merges builds and quick flips. Full slide changes are always kept.</p></details>
                                 </div>
                                 <div id="contentCutOptions" hidden>
                                     <label class="range-label" for="contentCutThreshold">
@@ -551,7 +563,7 @@
                                         <option value="90">90</option>
                                         <option value="0">Unlimited</option>
                                     </select>
-                                    <small>A fixed limit applies to every detail level, so a low limit can make all levels return the same count. Short clips may include up to 10 slides; when the limit is reached, the most distinct changes are kept.</small>
+                                    <details class="ui-disclosure"><summary>Slide limits</summary><p>A fixed limit applies at every detail level. Short clips may include up to 10 slides. At the limit, the most distinct changes are kept.</p></details>
                                     <label><input id="mergeSimilarSlides" type="checkbox" checked> Merge visually similar slides</label>
                                     <label for="slideImageQuality">Screenshot quality</label>
                                     <select id="slideImageQuality">
@@ -562,9 +574,9 @@
                                 </div>
                                 <label id="includeChapterBoundariesLabel">
                                     <input id="includeChapterBoundaries" type="checkbox" checked>
-                                    Include transcript chapter boundaries when available
+                                    Include chapter boundaries
                                 </label>
-                                <small id="sceneDetectionHelp">Adaptive mode finds settled slide states, ignores cursor and webcam movement, and merges builds according to the detail level.</small>
+                                <details class="ui-disclosure"><summary>Detection help</summary><p id="sceneDetectionHelp">Adaptive mode ignores cursor and webcam movement and merges slide builds by detail level.</p></details>
                                 </div>
                                 <div class="dialog-actions">
                                     <button class="btn btn-secondary" type="submit" value="cancel">Cancel</button>
@@ -646,12 +658,11 @@
             <div class="settings-section">
                 <h3>Compute device</h3>
                 <p id="runtimeStatus" class="settings-description">Checking GPU availability...</p>
-                <p class="settings-description">Whisper uses the GPU only when CUDA is available in this Colab runtime. Slide-change detection itself runs on the CPU.</p>
+                <details class="ui-disclosure"><summary>Device help</summary><p>Whisper uses a GPU when CUDA is available. Slide detection runs on the CPU.</p></details>
             </div>
 
             <div class="settings-section">
                 <h3>OCR Preferences</h3>
-                <p class="settings-description">Choose which OCR engine to use for text detection:</p>
                 
                 <div class="radio-group">
                     <label class="radio-label">
@@ -659,7 +670,7 @@
                         <span class="radio-custom"></span>
                         <div class="radio-text">
                             <strong>Tesseract OCR</strong>
-                            <span class="radio-description">Process individual text detections with Tesseract (default)</span>
+                            <span class="radio-description">Fast, individual text regions</span>
                         </div>
                     </label>
                     
@@ -668,7 +679,7 @@
                         <span class="radio-custom"></span>
                         <div class="radio-text">
                             <strong>Surya OCR</strong>
-                            <span class="radio-description">Process entire images with Surya OCR (better quality but slower)</span>
+                            <span class="radio-description">Whole-slide reading, slower</span>
                         </div>
                     </label>
                     
@@ -677,7 +688,7 @@
                         <span class="radio-custom"></span>
                         <div class="radio-text">
                             <strong>Both Methods</strong>
-                            <span class="radio-description">Use both Tesseract and Surya (most comprehensive but slowest)</span>
+                            <span class="radio-description">Both engines, slowest</span>
                         </div>
                     </label>
                 </div>
@@ -685,7 +696,6 @@
             
             <div class="settings-section">
                 <h3>Transcript Preferences</h3>
-                <p class="settings-description">Choose which transcript source to use:</p>
                 
                 <div class="radio-group">
                     <label class="radio-label">
@@ -693,7 +703,7 @@
                         <span class="radio-custom"></span>
                         <div class="radio-text">
                             <strong>YouTube Transcript</strong>
-                            <span class="radio-description">Use the transcript provided by YouTube (faster, if available)</span>
+                            <span class="radio-description">Existing captions, when available</span>
                         </div>
                     </label>
                     
@@ -702,7 +712,7 @@
                         <span class="radio-custom"></span>
                         <div class="radio-text">
                             <strong>Whisper Transcript</strong>
-                            <span class="radio-description">Generate transcript using Whisper AI (higher quality but slower)</span>
+                            <span class="radio-description">Generate from audio</span>
                         </div>
                     </label>
                 </div>
