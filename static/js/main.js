@@ -13,6 +13,7 @@ import { elements } from './elements.js';
 import { initInteractiveLayer } from './interactive-layer.js';
 import { initTranscriptVersions } from './transcript-versions.js';
 import { initCaptionExport } from './caption-export.js';
+import { openOptionsDialog } from './utils.js';
 
 // Global state
 export const state = {
@@ -339,7 +340,7 @@ function initApp() {
     bind(elements.loadVideoBtn, 'click', processVideo);
     bind(elements.detectScenesBtn, 'click', () => {
         if (!elements.sceneDetectionOptionsDialog.open) {
-            elements.sceneDetectionOptionsDialog.showModal();
+            openOptionsDialog(elements.sceneDetectionOptionsDialog);
         }
     });
     bind(elements.startSceneDetectionBtn, 'click', () => {
@@ -460,7 +461,7 @@ function initApp() {
         if (!elements.exportOptionsDialog.open) {
             updateExportAvailability();
             setGrouping(elements.chapterGrouping.value);
-            elements.exportOptionsDialog.showModal();
+            openOptionsDialog(elements.exportOptionsDialog);
             void loadExportSuggestions();
             void refreshSavedExports();
         }
@@ -491,7 +492,7 @@ function initApp() {
     });
     bind(elements.transcriptOptionsBtn, 'click', () => {
         if (!elements.transcriptOptionsDialog.open) {
-            elements.transcriptOptionsDialog.showModal();
+            openOptionsDialog(elements.transcriptOptionsDialog);
             void updateTranslationModelStatus();
         }
     });

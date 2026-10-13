@@ -15,7 +15,7 @@ const elements = {
     exportChaptersBtn: {},
     exportOptionsDialog: {
         open: false,
-        showModal() {
+        show() {
             opened = true;
             this.open = true;
         },
@@ -32,6 +32,7 @@ const loadExportSuggestions = () => {
     return new Promise(() => {});
 };
 const refreshSavedExports = async () => {};
+const openOptionsDialog = dialog => dialog.show();
 const setGrouping = () => {};
 
 eval(source.slice(start, end));

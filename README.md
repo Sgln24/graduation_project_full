@@ -93,7 +93,9 @@ These are the changes specifically described as fixes to the inherited project. 
   filenames and creation dates. Only completed copies appear in the dropdown;
   the newest is selected automatically. Click **Download MP4** to save the selected
   copy with the app's save-file workflow; the refresh button reloads the list.
-  Unfinished and failed exports are shown separately below the creation controls.
+  Below the creation controls, only the current export's progress is shown,
+  followed by a **Download MP4** button when it finishes. Opening the dialog
+  reconnects to an active export, without repeating old completed or failed jobs.
   The original lecture
   does not need to be selected. Copies also remain in **Saved exports**.
   Jobs and completed downloads remain available after a page
@@ -103,11 +105,14 @@ These are the changes specifically described as fixes to the inherited project. 
   two-letter code, for example `Lecture_DE caption.mp4` or `Lecture_EN caption.mp4`.
   The language comes from the selected translation or the existing transcript-language
   detector, without a separate language selector. Older saved copies keep their original names.
-  Choose small/medium/large/XL text and top/bottom positioning in that dialog.
-  The default is white text with a dark outline, medium size, at the bottom.
+  Choose small/medium/large text and top/bottom positioning in that dialog.
+  The default is medium white text in a black box, at the bottom.
   This dialog shows a real FFmpeg-rendered preview on the selected video's
   frame before exporting. **Open large preview at current video time** opens a
   large, viewport-fitted view; closing it returns to the side-panel options.
+  Preview captions scale with the displayed video frame; a small thumbnail is
+  not the final video's absolute text size. The enlarged preview uses the same
+  caption style and wrapping as the exported MP4.
   Opening the dialog or changing options does not start a video export.
   Captions use safe margins and short, two-line blocks rather than large paragraphs.
   Long cues are split without dropping words; their sub-cue timing is estimated
@@ -202,6 +207,9 @@ These are the changes specifically described as fixes to the inherited project. 
   The right panel is narrow, and option dialogs and Settings open over it so
   the video stays visible. Caption previews, transcript downloads and saved
   caption settings use the same side-panel placement and width on desktop.
+  Side-panel option dialogs are non-modal, so video controls and both resize
+  handles remain usable while options are open. Escape closes the open options.
+  Only the explicitly enlarged caption preview is modal.
   Narrow-screen popups share one position near the content panel, keeping at
   least 248 pixels of usable height when the panel starts near the screen bottom.
   Detection

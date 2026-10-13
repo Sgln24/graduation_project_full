@@ -20,6 +20,14 @@
         update();
         window.addEventListener('resize', update);
         window.addEventListener('scroll', update, {passive: true, capture: true});
+        document.addEventListener('keydown', event => {
+            if (event.key !== 'Escape' || document.querySelector('dialog:modal')) return;
+            const dialog = document.querySelector('dialog.options-dialog[open]');
+            if (dialog) {
+                dialog.close();
+                event.preventDefault();
+            }
+        });
         const panel = document.querySelector('.content-tabs');
         if (panel && 'ResizeObserver' in window) new ResizeObserver(update).observe(panel);
         // Refresh just before a dialog or the settings modal becomes visible.

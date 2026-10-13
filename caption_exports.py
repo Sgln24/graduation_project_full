@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi.responses import FileResponse
 from ffmpeg_tools import media_executable
 
-CAPTION_SIZES = {"small": (30, 64), "medium": (40, 48), "large": (50, 38), "xl": (72, 26)}
+CAPTION_SIZES = {"small": (30, 64), "medium": (40, 48), "large": (50, 38)}
 
 
 def validate_caption_style(options=None):
@@ -19,7 +19,7 @@ def validate_caption_style(options=None):
     if not isinstance(options, dict):
         raise ValueError("Caption style must be an object.")
     style = {
-        "preset": options.get("preset", "outline"),
+        "preset": options.get("preset", "box"),
         "size": options.get("size", "medium"),
         "position": options.get("position", "bottom"),
     }

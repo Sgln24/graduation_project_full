@@ -12,8 +12,10 @@ function element() {
         replaceChildren() { this.children = []; },
         addEventListener(event, handler) { this.listeners[event] = handler; },
         click() { this.clicked = true; }, remove() { this.removed = true; },
-        showModal() { this.open = true; },
+        showModal() { this.open = true; this.modal = true; },
+        show() { this.open = true; this.modal = false; },
         close() { this.open = false; },
+        setAttribute(name, value) { this[name] = value; },
         removeAttribute(name) { delete this[name]; } };
 }
 const ids = {};
@@ -37,10 +39,13 @@ const requests = [], errors = [], links = [], saves = [];
 const context = vm.createContext({
     state, showError: message => errors.push(message), refreshSavedExports: async () => {},
     saveBlobToUserLocation: async (blob, filename, container) => saves.push({blob, filename, container}),
+    openOptionsDialog: dialog => dialog.show(),
     fetch: (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject})),
     document: {getElementById: id => ids[id], body: element(),
         querySelector: selector => selector === 'dialog:modal' ? (ids.captionStyleDialog.open ? ids.captionStyleDialog : null) : {currentTime: 12},
-        querySelectorAll: () => [ids.captionStyleDialog, ids.captionLargePreviewDialog].filter(dialog => dialog.open),
+        querySelectorAll: selector => selector === 'dialog:modal'
+            ? [ids.captionStyleDialog, ids.captionLargePreviewDialog].filter(dialog => dialog.open && dialog.modal)
+            : [ids.captionStyleDialog, ids.transcriptDownloadDialog].filter(dialog => dialog.open),
         createElement: tag => { const item = element(); if(tag === 'a') links.push(item); return item; },
         addEventListener() {}},
     URL: {createObjectURL: () => 'blob:captions', revokeObjectURL() {}},
@@ -153,7 +158,7 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     requests.at(-1).resolve({ok: true, blob: async () => ({mp4: true})});
     await savedDownload;
     assert.equal(saves.at(-1).filename, 'Previous-lecture-captioned.mp4');
-    assert.equal(saves.at(-1).container, ids.captionStyleDialog, 'Fallback download must be inside caption modal');
+    assert.equal(saves.at(-1).container, context.document.body, 'Non-modal options must not block normal downloads');
     assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, false);
     const preserving = context.refreshSavedCaptionVideos();
     reply(requests.at(-1), {exports: [{id: 'old', title: 'Saved', status: 'complete', filename: 'Old.mp4', download_url: '/export_jobs/old/download'}]});
@@ -200,15 +205,50 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.equal(requests.length, beforeSwitchGuard, 'Do not encode the previous transcript while another is loading');
     assert.match(errors.at(-1), /finish loading/);
     ids.captionTranscriptVersionSelect.disabled = false;
-    ids.captionStyleSize.value = 'xl';
+    ids.captionStyleSize.value = 'large';
     const largePreview = ids.refreshCaptionPreviewBtn.listeners.click();
-    assert.equal(JSON.parse(requests.at(-1).options.body).style.size, 'xl');
+    assert.equal(JSON.parse(requests.at(-1).options.body).style.size, 'large');
     requests.at(-1).resolve({ok: true, blob: async () => ({})});
     await largePreview;
     assert.equal(ids.captionLargePreviewDialog.open, true);
     assert.equal(ids.captionLargePreviewImage.src, 'blob:captions');
     ids.captionStyleDialog.listeners.close();
     assert.equal(ids.captionLargePreviewDialog.open, false, 'Closing options closes the enlarged preview');
+    state.currentVideoId = 'other';
+    const running = {id: 'active-copy', title: 'Captioned video - Current', status: 'running',
+        steps: [{message: 'Burning captions: 42% of video encoded'}]};
+    const runningRefresh = context.refreshCaptionExports();
+    reply(requests.at(-1), {exports: [
+        {id: 'old-failed', title: 'Captioned video - Old', status: 'error', error: 'Interrupted'},
+        running,
+        {id: 'old-complete', title: 'Captioned video - Old', status: 'complete'},
+    ]});
+    await runningRefresh;
+    assert.equal(ids.captionVideoProgress.children.length, 2, 'Only the active export is shown, not history');
+    assert.match(ids.captionVideoProgress.children[0].textContent, /42%/);
+    assert.equal(ids.captionVideoProgress.children[1].value, 42);
+    assert.equal(ids.captionVideoProgress.children[1].max, 100);
+    const completed = {...running, status: 'complete', filename: 'Lecture_DE caption.mp4', download_url: '/export_jobs/active-copy/download'};
+    const completedRefresh = context.refreshCaptionExports();
+    reply(requests.at(-1), {exports: [completed]});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests.at(-1).url, '/saved_caption_videos', 'Completion must update the saved dropdown');
+    reply(requests.at(-1), {exports: [completed]});
+    await completedRefresh;
+    assert.equal(ids.captionVideoProgress.children[0].textContent, 'Your video copy is ready.');
+    const completedButton = ids.captionVideoProgress.children[1];
+    assert.equal(completedButton.textContent, 'Download MP4');
+    completedButton.listeners.click();
+    assert.equal(requests.at(-1).url, completed.download_url);
+    requests.at(-1).resolve({ok: true, blob: async () => ({mp4: true})});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(saves.at(-1).filename, completed.filename);
+    assert.equal(completedButton.disabled, false);
+    state.currentVideoId = 'new-video';
+    const historyOnly = context.refreshCaptionExports();
+    reply(requests.at(-1), {exports: [{id: 'historical', title: 'Captioned video - Old', status: 'error', error: 'Old failure'}]});
+    await historyOnly;
+    assert.equal(ids.captionVideoProgress.children.length, 0, 'Opening another lecture must not display historical failures');
     const utils = fs.readFileSync(path.join(__dirname, '..', 'static', 'js', 'utils.js'), 'utf8').replace(/^export /gm, '');
     context.window = {};
     vm.runInContext(utils, context);
@@ -218,5 +258,11 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.equal(links.at(-1).download, 'Lecture_EN caption.mp4');
     assert(ids.captionStyleDialog.children.includes(links.at(-1)));
     assert(links.at(-1).clicked && links.at(-1).removed);
+    ids.transcriptDownloadDialog.show();
+    ids.captionStyleDialog.close();
+    context.openOptionsDialog(ids.captionStyleDialog);
+    assert.equal(ids.captionStyleDialog.open, true);
+    assert.equal(ids.captionStyleDialog.modal, false, 'Side-panel dialogs must not make resize handles inert');
+    assert.equal(ids.transcriptDownloadDialog.open, false, 'Opening options closes other side-panel dialogs');
     console.log('PASS: selected transcript snapshot, sidecar downloads, saved jobs, races, and input guards');
 })().catch(error => { console.error(error); process.exitCode = 1; });

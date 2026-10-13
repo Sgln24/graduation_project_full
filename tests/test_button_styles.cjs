@@ -49,9 +49,9 @@ for (const id of ['openCaptionStyleBtn', 'downloadTranscriptBtn', 'exportCaption
 assert(dialog('captionStyleDialog').includes('id="exportCaptionedVideoBtn"'));
 assert(dialog('captionStyleDialog').includes('id="captionStylePreview"'));
 assert(dialog('captionStyleDialog').includes('id="savedCaptionVideoSelect"'));
-assert(dialog('captionStyleDialog').includes('<option value="outline" selected>'));
+assert(dialog('captionStyleDialog').includes('<option value="box" selected>'));
 assert(dialog('captionStyleDialog').includes('<option value="medium" selected>'));
-assert(dialog('captionStyleDialog').includes('<option value="xl">'));
+assert(!dialog('captionStyleDialog').includes('<option value="xl">'));
 assert(dialog('captionStyleDialog').includes('id="captionTranscriptVersionSelect"'));
 assert(!html.includes('id="captionLanguage"'), 'Language must come from the selected transcript');
 assert(dialog('captionLargePreviewDialog').includes('id="captionLargePreviewImage"'));
@@ -76,7 +76,7 @@ const dynamicControls = [
     ['api-module.js', 'id="stopTranscriptionBtn" type="button" class="btn btn-danger"'],
     ['ocr.js', 'id="stopOcrBtn" class="btn btn-danger"'],
     ['ui.js', "actionButton.className = 'btn btn-secondary btn-action error-action-btn'"],
-    ['caption-export.js', "link.className = 'btn btn-secondary btn-action'"],
+    ['caption-export.js', "button.className = 'btn btn-secondary btn-action'"],
 ];
 for (const [file, expected] of dynamicControls) {
     const source = fs.readFileSync(path.join(root, 'static', 'js', file), 'utf8');

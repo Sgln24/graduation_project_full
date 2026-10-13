@@ -1294,6 +1294,15 @@ body .search-highlight.active {
     background: var(--surface-2);
 }
 
+.options-dialog {
+    z-index: 1000;
+}
+
+#captionVideoProgress progress {
+    width: 100%;
+    accent-color: var(--brand);
+}
+
 .caption-style-preview {
     width: 100%;
     max-height: 280px;

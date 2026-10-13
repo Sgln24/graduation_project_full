@@ -1,5 +1,12 @@
 // utils.js - Utility functions
 
+export function openOptionsDialog(dialog) {
+    document.querySelectorAll('dialog.options-dialog[open]').forEach(open => {
+        if (open !== dialog) open.close();
+    });
+    if (!dialog.open) dialog.show();
+}
+
 /**
  * Extracts the YouTube video ID from a URL
  * @param {string} url - The YouTube URL
