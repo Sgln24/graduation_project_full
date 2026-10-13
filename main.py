@@ -2048,6 +2048,13 @@ async def export_job_status(job_id: str):
 async def saved_exports(video_id: str):
     return {"exports": export_jobs.list(video_id)}
 
+@app.get("/saved_caption_videos")
+async def saved_caption_videos():
+    return {"exports": [
+        job for job in export_jobs.list()
+        if job["title"].startswith("Captioned video - ")
+    ]}
+
 
 @app.get("/export_jobs/{job_id}/download")
 async def download_export_job(job_id: str):

@@ -19,7 +19,8 @@ const ids = {};
  'captionVideoProgress', 'captionTranscriptLabel', 'transcriptVersionSelect', 'transcriptOptionsDialog',
  'captionStylePreset', 'captionStyleSize', 'captionStylePosition', 'captionStylePreview',
  'captionPreviewStatus', 'refreshCaptionPreviewBtn', 'captionStyleDialog',
- 'openCaptionStyleBtn', 'downloadTranscriptBtn', 'transcriptDownloadDialog', 'downloadTranscriptLabel']
+ 'openCaptionStyleBtn', 'downloadTranscriptBtn', 'transcriptDownloadDialog', 'downloadTranscriptLabel',
+ 'savedCaptionVideosBtn', 'savedCaptionVideosDialog', 'savedCaptionVideosList', 'refreshCaptionVideosBtn']
     .forEach(id => ids[id] = element());
 ids.transcriptVersionSelect.selectedOptions = [{value: 'de-version', textContent: 'German translation'}];
 ids.captionStylePreset.value = 'yellow';
@@ -117,5 +118,31 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.equal(requests.length, 9, 'Opening the caption dialog must not start encoding');
     requests[7].resolve({ok: true, blob: async () => ({})});
     reply(requests[8], {exports: []});
+    ids.savedCaptionVideosBtn.listeners.click();
+    assert.equal(ids.savedCaptionVideosDialog.open, true);
+    assert.equal(requests[9].url, '/saved_caption_videos', 'Saved copies must include every lecture');
+    reply(requests[9], {exports: [
+        {title: 'Captioned video - Older transcript', filename: 'Previous-lecture-captioned.mp4',
+            status: 'complete', download_url: '/export_jobs/old/download', video_id: 'previous', created_at: 1},
+    ]});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(ids.savedCaptionVideosList.children.length, 1);
+    assert.match(ids.savedCaptionVideosList.children[0].textContent, /Previous-lecture-captioned.mp4/);
+    assert.equal(ids.savedCaptionVideosList.children[0].children.at(-1).href, '/export_jobs/old/download');
+    const empty = context.refreshSavedCaptionVideos();
+    reply(requests[10], {exports: []});
+    await empty;
+    assert.match(ids.savedCaptionVideosList.textContent, /No captioned video copies/);
+    const failed = context.refreshSavedCaptionVideos();
+    requests[11].reject(new Error('Offline'));
+    await failed;
+    assert.match(ids.savedCaptionVideosList.textContent, /Could not load.*Offline/);
+    const earlier = context.refreshSavedCaptionVideos();
+    const newer = context.refreshSavedCaptionVideos();
+    reply(requests[13], {exports: []});
+    await newer;
+    reply(requests[12], {exports: [{title: 'Captioned video - Stale', status: 'complete'}]});
+    await earlier;
+    assert.match(ids.savedCaptionVideosList.textContent, /No captioned video copies/, 'Stale history must not replace newer results');
     console.log('PASS: selected transcript snapshot, sidecar downloads, saved jobs, races, and input guards');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -215,6 +215,7 @@
                             <div class="transcript-export-actions">
                                 <button id="openCaptionStyleBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-film" aria-hidden="true"></i> Add captions to video</button>
                                 <button id="downloadTranscriptBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download transcript</button>
+                                <button id="savedCaptionVideosBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-folder-open" aria-hidden="true"></i> Saved captioned videos</button>
                             </div>
                             <dialog id="transcriptOptionsDialog" class="options-dialog">
                                 <form method="dialog">
@@ -286,7 +287,7 @@
                             </div>
                                 </form>
                             </dialog>
-                            <dialog id="captionStyleDialog" class="caption-preview-dialog" aria-labelledby="captionStyleHeading">
+                            <dialog id="captionStyleDialog" class="options-dialog caption-preview-dialog" aria-labelledby="captionStyleHeading">
                                 <form method="dialog">
                                     <div class="dialog-header">
                                         <h2 id="captionStyleHeading">Add captions to video</h2>
@@ -322,7 +323,22 @@
                                         <button class="btn btn-secondary" type="submit">Close</button>
                                         <button id="exportCaptionedVideoBtn" class="btn btn-primary" type="button"><i class="fas fa-film" aria-hidden="true"></i> Create video copy</button>
                                     </div>
+                                    <h3>Captioned copies of this video</h3>
                                     <div id="captionVideoProgress" role="status" aria-live="polite"></div>
+                                </form>
+                            </dialog>
+                            <dialog id="savedCaptionVideosDialog" class="options-dialog" aria-labelledby="savedCaptionVideosHeading">
+                                <form method="dialog">
+                                    <div class="dialog-header">
+                                        <h2 id="savedCaptionVideosHeading">Saved captioned videos</h2>
+                                        <button class="dialog-close" type="submit" aria-label="Close saved captioned videos">&times;</button>
+                                    </div>
+                                    <p>Captioned video copies from all lectures, newest first. Downloading a saved copy does not regenerate it.</p>
+                                    <button id="refreshCaptionVideosBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-sync-alt" aria-hidden="true"></i> Refresh</button>
+                                    <div id="savedCaptionVideosList" class="saved-caption-videos-list" role="status" aria-live="polite"></div>
+                                    <div class="dialog-actions">
+                                        <button class="btn btn-secondary" type="submit">Close</button>
+                                    </div>
                                 </form>
                             </dialog>
                             <dialog id="transcriptDownloadDialog" class="options-dialog" aria-labelledby="transcriptDownloadHeading">

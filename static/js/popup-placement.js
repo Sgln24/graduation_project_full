@@ -23,7 +23,7 @@
         const panel = document.querySelector('.content-tabs');
         if (panel && 'ResizeObserver' in window) new ResizeObserver(update).observe(panel);
         // Refresh just before a dialog or the settings modal becomes visible.
-        const popups = document.querySelectorAll('dialog, .modal');
+        const popups = document.querySelectorAll('dialog, .modal, .debug-overlay, .config-dialog');
         if (popups.length) {
             const observer = new MutationObserver(update);
             popups.forEach((popup) => observer.observe(popup, {attributes: true, attributeFilter: ['open', 'style', 'class']}));

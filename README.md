@@ -86,12 +86,15 @@ These are the changes specifically described as fixes to the inherited project. 
   versions, then click **Add captions to video** in the Transcript toolbar.
   Choose the appearance, inspect the preview, then click **Create video copy**.
   The current transcript is captured when you create the copy, so later version
-  changes do not alter the export. Download the full captioned MP4 from that dialog
-  or **Saved exports**. Jobs and completed downloads remain available after a page
+  changes do not alter the export. **Saved captioned videos** in the Transcript
+  toolbar lists copies from all lectures, newest first, with filenames, creation
+  dates and **Download MP4** links. It works without opening a preview or selecting
+  the original lecture. Copies of the current lecture also appear in the caption
+  dialog and **Saved exports**. Jobs and completed downloads remain available after a page
   reload; a server restart interrupts unfinished encoding. The original video is
   never overwritten. Choose white-on-black-box, white outlined, or yellow outlined
   captions, small/medium/large text, and top/bottom positioning in that dialog.
-  This larger dialog shows a real FFmpeg-rendered preview on the selected video's
+  This dialog shows a real FFmpeg-rendered preview on the selected video's
   frame before exporting.
   Opening the dialog or changing options does not start a video export.
   Captions use safe margins and short, two-line blocks rather than large paragraphs.
@@ -185,7 +188,11 @@ These are the changes specifically described as fixes to the inherited project. 
   Cancel/Close controls remain neutral, so opening options is visually distinct
   from starting work.
   The right panel is narrow, and option dialogs and Settings open over it so
-  the video stays visible. Detection
+  the video stays visible. Caption previews, transcript downloads and saved
+  captioned-video history use the same side-panel placement and width on desktop.
+  Narrow-screen popups share one position near the content panel, keeping at
+  least 248 pixels of usable height when the panel starts near the screen bottom.
+  Detection
   buttons stay on the playback toolbar row, becoming icon-only on smaller screens.
   In HTML, the chapter's sections and transcript are grouped in indented,
   collapsible sections beneath the chapter. Word, PDF, HTML and outline exports

@@ -94,13 +94,13 @@ class ExportJobStore:
         state["elapsed"] = round(state.get("finished_at", time.time()) - state["created_at"], 1)
         return state
 
-    def list(self, video_id):
+    def list(self, video_id=None):
         if not self.root.exists():
             return []
         exports = []
         for path in self.root.glob("*/state.json"):
             state = self.read(path.parent.name)
-            if state["video_id"] == video_id:
+            if video_id is None or state["video_id"] == video_id:
                 exports.append(state)
         return sorted(exports, key=lambda state: state["created_at"], reverse=True)
 

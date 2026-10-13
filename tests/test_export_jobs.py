@@ -75,6 +75,17 @@ class ExportJobTests(unittest.TestCase):
         self.assertEqual(state["status"], "error")
         self.assertIn("FFmpeg failed", state["error"])
 
+    def test_listing_all_videos_preserves_per_video_filter_and_restart_history(self):
+        for index, video in enumerate(("first", "second")):
+            self.store._write(f"{index:032x}", {
+                "video_id": video, "status": "complete", "title": f"Captioned video - {video}",
+                "created_at": index + 1, "finished_at": index + 2,
+            })
+        restarted = ExportJobStore(self.store.root)
+        self.assertEqual([job["video_id"] for job in restarted.list()], ["second", "first"])
+        self.assertEqual([job["video_id"] for job in restarted.list("first")], ["first"])
+        self.assertEqual(restarted.list("missing"), [])
+
     def test_temporary_work_is_outside_saved_exports(self):
         workspaces = []
         async def generate(video_id, options, step, artifacts, workspace):

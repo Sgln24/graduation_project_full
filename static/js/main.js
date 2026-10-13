@@ -307,6 +307,7 @@ function initApp() {
         ['transcriptOptionsBtn', 'transcriptOptionsDialog'],
         ['openCaptionStyleBtn', 'captionStyleDialog'],
         ['downloadTranscriptBtn', 'transcriptDownloadDialog'],
+        ['savedCaptionVideosBtn', 'savedCaptionVideosDialog'],
         ['exportChaptersBtn', 'exportOptionsDialog'],
         ['detectScenesBtn', 'sceneDetectionOptionsDialog'],
         ['settingsBtn', 'settingsModal'],

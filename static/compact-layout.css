@@ -482,8 +482,10 @@ input:checked + .toggle-slider:before {
      * popup-placement.js keeps the --panel-* variables in sync with the panel.
      */
     html .options-dialog,
-    html .modal-content {
-        --popup-width: max(var(--panel-width, 420px), min(460px, calc(100vw - 24px)));
+    html .modal-content,
+    html .debug-content,
+    html .config-dialog-content {
+        --popup-width: var(--panel-width, 420px);
     }
 
     html .options-dialog {
@@ -506,7 +508,9 @@ input:checked + .toggle-slider:before {
     }
 
     html .options-dialog form *,
-    html .modal-content * {
+    html .modal-content *,
+    html .debug-content *,
+    html .config-dialog-content * {
         min-width: 0;
         max-width: 100%;
         overflow-wrap: anywhere;
@@ -525,13 +529,17 @@ input:checked + .toggle-slider:before {
         backdrop-filter: none;
     }
 
-    html .modal {
+    html .modal,
+    html .debug-overlay,
+    html .config-dialog {
         background: transparent;
         backdrop-filter: none;
         pointer-events: none;
     }
 
-    html .modal-content {
+    html .modal-content,
+    html .debug-content,
+    html .config-dialog-content {
         box-sizing: border-box;
         position: fixed;
         left: max(12px, calc(var(--panel-right, calc(100vw - 12px)) - var(--popup-width)));
@@ -541,6 +549,8 @@ input:checked + .toggle-slider:before {
         overflow-x: hidden;
         max-height: var(--panel-height, calc(100dvh - 64px));
         padding: 16px;
+        margin: 0;
+        overflow-y: auto;
         pointer-events: auto;
     }
 }
@@ -583,6 +593,54 @@ input:checked + .toggle-slider:before {
 }
 
 @media (max-width: 850px) {
+    html .options-dialog,
+    html .modal-content,
+    html .debug-content,
+    html .config-dialog-content {
+        --popup-top: min(var(--panel-top, 12px), max(12px, calc(100dvh - 260px)));
+        box-sizing: border-box;
+        position: fixed;
+        inset: auto;
+        left: 12px;
+        top: var(--popup-top);
+        width: calc(100vw - 24px);
+        max-width: calc(100vw - 24px);
+        max-height: calc(100dvh - var(--popup-top) - 12px);
+        margin: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        pointer-events: auto;
+    }
+
+    html .options-dialog form {
+        max-height: calc(100dvh - var(--popup-top) - 12px);
+        padding: 14px;
+        overflow-x: hidden;
+    }
+
+    html .options-dialog form *,
+    html .modal-content *,
+    html .debug-content *,
+    html .config-dialog-content * {
+        min-width: 0;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+    }
+
+    html .options-dialog::backdrop,
+    html .modal,
+    html .debug-overlay,
+    html .config-dialog {
+        background: transparent;
+        backdrop-filter: none;
+    }
+
+    html .modal,
+    html .debug-overlay,
+    html .config-dialog {
+        pointer-events: none;
+    }
+
     .main-content {
         grid-template-columns: minmax(0, 1fr);
     }

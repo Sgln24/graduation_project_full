@@ -96,11 +96,18 @@ class CaptionTests(unittest.TestCase):
         functions = [
             node for node in ast.parse(source.read_text(encoding="utf-8")).body
             if isinstance(node, ast.AsyncFunctionDef)
-            and node.name in {"start_caption_video_job", "download_caption_file", "caption_preview"}
+            and node.name in {"start_caption_video_job", "download_caption_file", "caption_preview", "saved_caption_videos"}
         ]
         captured = []
 
         class Jobs:
+            def list(self):
+                return [
+                    {"title": "Captioned video - German", "video_id": "other", "status": "complete", "download_url": "/export_jobs/old/download"},
+                    {"title": "Chapter export", "video_id": "video", "status": "complete"},
+                    {"title": "Captioned video - English", "video_id": "video", "status": "running"},
+                ]
+
             def start(self, video_id, options, generate):
                 captured.append((video_id, options, generate))
                 return "a" * 32
@@ -126,6 +133,10 @@ class CaptionTests(unittest.TestCase):
         }
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), "exec"), namespace)
         client = TestClient(app)
+        history = client.get("/saved_caption_videos")
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual([job["video_id"] for job in history.json()["exports"]], ["other", "video"])
+        self.assertEqual(history.json()["exports"][0]["download_url"], "/export_jobs/old/download")
         payload = {"transcript": [{"start": 0, "duration": 1, "text": "Chosen translation"}],
                    "filename": "lecture.mp4", "transcript_label": "German"}
         response = client.post("/caption_video_jobs/video", json=payload)

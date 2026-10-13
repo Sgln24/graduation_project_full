@@ -16,6 +16,7 @@ const actions = [
     'detectScenesBtn', 'refreshSlideTitlesBtn', 'downloadScreenshotsBtn',
     'downloadSlidesPdfBtn', 'downloadSlideTextWordBtn',
     'openCaptionStyleBtn', 'downloadTranscriptBtn',
+    'savedCaptionVideosBtn', 'refreshCaptionVideosBtn',
 ];
 for (const id of options) {
     assert(buttons.get(id)?.includes('btn-options'), `${id} must remain an options control`);
@@ -27,6 +28,15 @@ for (const id of actions) {
 assert(buttons.get('exportCaptionedVideoBtn').includes('btn-primary'));
 assert(buttons.get('deleteTranscriptVersionBtn').includes('btn-danger'));
 const dialog = id => html.match(new RegExp(`<dialog id="${id}"[\\s\\S]*?<\\/dialog>`))[0];
+for (const [, attributes] of html.matchAll(/<dialog\b([^>]*)>/g)) {
+    assert(attributes.includes('options-dialog'), 'All app dialogs must share side-panel positioning');
+}
+const layout = fs.readFileSync(path.join(root, 'static', 'compact-layout.css'), 'utf8');
+assert(layout.includes('--popup-width: var(--panel-width, 420px)'), 'Desktop popups must match the panel, not widen across the video');
+assert(layout.includes('--popup-top: min(var(--panel-top, 12px)'), 'Narrow-screen popups must share a viewport-clamped panel position');
+for (const selector of ['html .options-dialog', 'html .modal-content', 'html .debug-content', 'html .config-dialog-content']) {
+    assert(layout.includes(selector), `${selector} must use shared popup placement`);
+}
 const transcriptOptions = dialog('transcriptOptionsDialog');
 for (const id of ['openCaptionStyleBtn', 'downloadTranscriptBtn', 'exportCaptionedVideoBtn',
     'downloadCaptionSrtBtn', 'downloadCaptionVttBtn', 'captionStylePreset']) {
