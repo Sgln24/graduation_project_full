@@ -31,7 +31,7 @@ export function showErrorWithActions(message, actions) {
     actions.forEach(({ label, action }) => {
         const actionButton = document.createElement('button');
         actionButton.type = 'button';
-        actionButton.className = 'btn btn-secondary error-action-btn';
+        actionButton.className = 'btn btn-secondary btn-action error-action-btn';
         actionButton.textContent = label;
         actionButton.addEventListener('click', action);
         elements.errorAlert.appendChild(actionButton);

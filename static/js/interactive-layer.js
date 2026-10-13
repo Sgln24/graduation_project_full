@@ -723,13 +723,13 @@ function createInteractiveLayerContainer() {
     expandedControls.id = 'layerControlsExpanded';
     expandedControls.className = 'layer-controls-expanded';
     expandedControls.innerHTML = `
-            <button id="extractElementBtn" class="btn btn-secondary">
+            <button id="extractElementBtn" class="btn btn-secondary btn-action">
                 <i class="fas fa-cut"></i> Extract Element
             </button>
-            <button id="extractAllBtn" class="btn btn-secondary">
+            <button id="extractAllBtn" class="btn btn-secondary btn-action">
                 <i class="fas fa-object-group"></i> Extract All
             </button>
-            <button id="autoExtractConfigBtn" class="btn btn-secondary">
+            <button id="autoExtractConfigBtn" class="btn btn-secondary btn-options">
                 <i class="fas fa-cog"></i> Config
             </button>
             <button id="clearElementsBtn" class="btn btn-danger">

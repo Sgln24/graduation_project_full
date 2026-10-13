@@ -176,8 +176,14 @@ These are the changes specifically described as fixes to the inherited project. 
   Narrow screens stack the panels and retain normal page scrolling.
   The interface uses a modern light theme that follows the operating system's
   dark-mode setting automatically, with visible keyboard focus and reduced
-  motion when the system requests it. The right panel is narrow, and option
-  dialogs and Settings open over it so the video stays visible. Detection
+  motion when the system requests it. Options controls stay neutral while
+  processing, preview and download actions use
+  accent-tinted buttons with an accent edge. Main start/save actions use solid
+  accent buttons; stop/delete actions use a red treatment. Navigation and
+  Cancel/Close controls remain neutral, so opening options is visually distinct
+  from starting work.
+  The right panel is narrow, and option dialogs and Settings open over it so
+  the video stays visible. Detection
   buttons stay on the playback toolbar row, becoming icon-only on smaller screens.
   In HTML, the chapter's sections and transcript are grouped in indented,
   collapsible sections beneath the chapter. Word, PDF, HTML and outline exports

@@ -114,7 +114,8 @@ export async function refreshCaptionExports() {
             if (job.status === 'complete') {
                 const link = document.createElement('a');
                 link.href = job.download_url;
-                link.textContent = ' Download MP4';
+                link.className = 'btn btn-secondary btn-action';
+                link.textContent = 'Download MP4';
                 row.append(link);
             }
             container.append(row);

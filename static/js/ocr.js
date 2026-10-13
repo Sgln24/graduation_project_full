@@ -118,7 +118,7 @@ function ensureOcrStatusElement() {
                     <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
                     <span class="ocr-progress-title"></span>
                     <span class="ocr-progress-elapsed"></span>
-                    <button type="button" id="stopOcrBtn" class="btn btn-secondary">Stop OCR</button>
+                    <button type="button" id="stopOcrBtn" class="btn btn-danger">Stop OCR</button>
                 </div>
                 <div class="ocr-progress-bar"><div class="ocr-progress-fill"></div></div>
                 <div class="ocr-progress-text"></div>

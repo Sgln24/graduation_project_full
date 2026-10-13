@@ -187,7 +187,7 @@ export async function refreshSavedExports() {
                 open.href = item.open_url;
                 open.target = '_blank';
                 open.rel = 'noopener';
-                open.className = 'btn btn-secondary';
+                open.className = 'btn btn-secondary btn-action';
                 actions.appendChild(open);
             }
             const download = document.createElement('a');
@@ -195,7 +195,7 @@ export async function refreshSavedExports() {
             download.title = 'Download';
             download.setAttribute('aria-label', `Download ${item.title}`);
             download.href = item.download_url;
-            download.className = 'btn btn-secondary btn-icon';
+            download.className = 'btn btn-secondary btn-action btn-icon';
             download.addEventListener('click', (event) => {
                 event.preventDefault();
                 void downloadSavedExport(item, download);
@@ -402,14 +402,14 @@ export async function generateChapters() {
         );
         const retryButton = document.createElement('button');
         retryButton.type = 'button';
-        retryButton.className = 'btn btn-secondary summary-retry-btn';
+        retryButton.className = 'btn btn-secondary btn-action summary-retry-btn';
         retryButton.innerHTML = '<i class="fas fa-redo"></i> Retry';
         retryButton.addEventListener('click', generateChapters);
         status.appendChild(retryButton);
         if (isModelError) {
             const autoRetryButton = document.createElement('button');
             autoRetryButton.type = 'button';
-            autoRetryButton.className = 'btn btn-secondary summary-retry-btn';
+            autoRetryButton.className = 'btn btn-secondary btn-action summary-retry-btn';
             autoRetryButton.innerHTML = '<i class="fas fa-sync"></i> Retry automatically';
             autoRetryButton.addEventListener('click', () => {
                 if (state.summaryRetryTimer) return;
@@ -425,7 +425,7 @@ export async function generateChapters() {
             status.appendChild(autoRetryButton);
             const stopRetryButton = document.createElement('button');
             stopRetryButton.type = 'button';
-            stopRetryButton.className = 'btn btn-secondary summary-retry-btn';
+            stopRetryButton.className = 'btn btn-danger summary-retry-btn';
             stopRetryButton.innerHTML = '<i class="fas fa-stop"></i> Stop automatic retry';
             stopRetryButton.addEventListener('click', () => {
                 if (state.summaryRetryTimer) {

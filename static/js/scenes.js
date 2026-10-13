@@ -524,7 +524,7 @@ export function showDetectionOverlay(scene) {
         <h4>${headerText || 'No YOLO detections available'}</h4>
         ${ocrTextCount > 0 ? `<p>${ocrTextCount} text elements have OCR results</p>` : ''}
         <div class="detection-controls">
-            <button id="resetDetectionsBtn" class="btn btn-secondary">
+            <button id="resetDetectionsBtn" class="btn btn-secondary btn-action">
                 <i class="fas fa-undo"></i> Reset View
             </button>
             <button id="createBackgroundBtn" class="btn btn-primary">
@@ -2536,7 +2536,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add reload button
         const reloadBtn = document.createElement('button');
         reloadBtn.id = 'reloadScenesBtn';
-        reloadBtn.className = 'btn btn-secondary detection-toggle-btn';
+        reloadBtn.className = 'btn btn-secondary btn-action detection-toggle-btn';
         reloadBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Reload Scenes';
         reloadBtn.title = 'Force reload scenes data';
         reloadBtn.onclick = function() {

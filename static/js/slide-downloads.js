@@ -25,7 +25,7 @@ async function saveSlideExport(url, filename, button, options) {
 export function createSlideDownloadButton(indices, label, {archive = false, videoId = state.currentVideoId} = {}) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'btn btn-secondary btn-icon slide-download';
+    button.className = 'btn btn-secondary btn-action btn-icon slide-download';
     button.innerHTML = '<i class="fas fa-download" aria-hidden="true"></i>';
     button.title = label;
     button.setAttribute('aria-label', label);

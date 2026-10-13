@@ -194,7 +194,7 @@ function renderWhisperProgress(status, startedAt) {
             <p>${phase} (${elapsedSeconds}s elapsed).${lastUpdate}</p>
             ${renderTranscriptSteps(status)}
             <p>You can continue using slide detection and video controls while this runs.</p>
-            <button id="stopTranscriptionBtn" type="button" class="btn btn-secondary">Stop processing</button>
+            <button id="stopTranscriptionBtn" type="button" class="btn btn-danger">Stop processing</button>
             <button id="browseDuringTranscriptionBtn" type="button" class="btn btn-secondary">Keep processing and view transcript</button>
         </div>
     `;
