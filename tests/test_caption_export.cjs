@@ -132,11 +132,13 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.equal(requests.length, 11, 'Opening the caption dialog must not start encoding');
     requests[8].resolve({ok: true, blob: async () => ({})});
     reply(requests[9], {exports: []});
-    assert.equal(requests[10].url, '/saved_caption_videos', 'Saved copies must include every lecture');
+    assert.equal(requests[10].url, '/saved_exports/other', 'Saved copies must belong to the current lecture');
     reply(requests[10], {exports: [
         {title: 'Captioned video - Older transcript', filename: 'Previous-lecture-captioned.mp4',
-            id: 'old', status: 'complete', download_url: '/export_jobs/old/download', video_id: 'previous', created_at: 1},
-        {title: 'Captioned video - Running', id: 'running', status: 'running', steps: [{message: 'Encoding 50%'}]},
+            id: 'old', status: 'complete', download_url: '/export_jobs/old/download', video_id: 'other', created_at: 1},
+        {title: 'Captioned video - Another lecture', id: 'foreign', status: 'complete', video_id: 'previous'},
+        {title: 'Chapter export', id: 'chapter', status: 'complete', video_id: 'other'},
+        {title: 'Captioned video - Running', id: 'running', status: 'running', video_id: 'other', steps: [{message: 'Encoding 50%'}]},
     ]});
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(ids.savedCaptionVideoSelect.children.length, 2, 'Only completed copies are downloadable');
@@ -161,7 +163,7 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.equal(saves.at(-1).container, context.document.body, 'Non-modal options must not block normal downloads');
     assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, false);
     const preserving = context.refreshSavedCaptionVideos();
-    reply(requests.at(-1), {exports: [{id: 'old', title: 'Saved', status: 'complete', filename: 'Old.mp4', download_url: '/export_jobs/old/download'}]});
+    reply(requests.at(-1), {exports: [{id: 'old', title: 'Captioned video - Saved', video_id: 'other', status: 'complete', filename: 'Old.mp4', download_url: '/export_jobs/old/download'}]});
     await preserving;
     assert.equal(ids.savedCaptionVideoSelect.value, 'old', 'Refresh must preserve selected copy');
     const failedDownload = ids.downloadSavedCaptionVideoBtn.listeners.click();
@@ -228,11 +230,11 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.match(ids.captionVideoProgress.children[0].textContent, /42%/);
     assert.equal(ids.captionVideoProgress.children[1].value, 42);
     assert.equal(ids.captionVideoProgress.children[1].max, 100);
-    const completed = {...running, status: 'complete', filename: 'Lecture_DE caption.mp4', download_url: '/export_jobs/active-copy/download'};
+    const completed = {...running, video_id: 'other', status: 'complete', filename: 'Lecture_DE caption.mp4', download_url: '/export_jobs/active-copy/download'};
     const completedRefresh = context.refreshCaptionExports();
     reply(requests.at(-1), {exports: [completed]});
     await new Promise(resolve => setImmediate(resolve));
-    assert.equal(requests.at(-1).url, '/saved_caption_videos', 'Completion must update the saved dropdown');
+    assert.equal(requests.at(-1).url, '/saved_exports/other', 'Completion must update the current video dropdown');
     reply(requests.at(-1), {exports: [completed]});
     await completedRefresh;
     assert.equal(ids.captionVideoProgress.children[0].textContent, 'Your video copy is ready.');
@@ -249,6 +251,24 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     reply(requests.at(-1), {exports: [{id: 'historical', title: 'Captioned video - Old', status: 'error', error: 'Old failure'}]});
     await historyOnly;
     assert.equal(ids.captionVideoProgress.children.length, 0, 'Opening another lecture must not display historical failures');
+    state.currentVideoId = 'other';
+    const oldVideoRefresh = context.refreshSavedCaptionVideos();
+    const oldVideoRequest = requests.at(-1);
+    state.currentVideoId = 'new-video';
+    const newVideoRefresh = context.refreshSavedCaptionVideos();
+    assert.equal(ids.savedCaptionVideoSelect.value, '', 'Clear the previous video selection immediately');
+    assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, true);
+    reply(requests.at(-1), {exports: []});
+    await newVideoRefresh;
+    reply(oldVideoRequest, {exports: [completed]});
+    await oldVideoRefresh;
+    assert.equal(ids.savedCaptionVideoSelect.children.length, 1, 'Late results from another video must not repopulate the dropdown');
+    assert.equal(ids.downloadSavedCaptionVideoBtn.disabled, true);
+    const beforeNoVideo = requests.length;
+    state.currentVideoId = null;
+    await context.refreshSavedCaptionVideos();
+    assert.equal(requests.length, beforeNoVideo, 'Do not fetch caption history without a video');
+    assert.match(ids.savedCaptionVideosStatus.textContent, /Load a video/);
     const utils = fs.readFileSync(path.join(__dirname, '..', 'static', 'js', 'utils.js'), 'utf8').replace(/^export /gm, '');
     context.window = {};
     vm.runInContext(utils, context);

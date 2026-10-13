@@ -89,15 +89,14 @@ These are the changes specifically described as fixes to the inherited project. 
   Choose the appearance, inspect the preview, then click **Create video copy**.
   The current transcript is captured when you create the copy, so later version
   changes do not alter the export. **Previously generated captioned videos** at
-  the top of **Add captions to video** is a dropdown listing copies from all lectures, newest first, with
+  the top of **Add captions to video** is a dropdown listing copies of the current video only, newest first, with
   filenames and creation dates. Only completed copies appear in the dropdown;
   the newest is selected automatically. Click **Download MP4** to save the selected
   copy with the app's save-file workflow; the refresh button reloads the list.
   Below the creation controls, only the current export's progress is shown,
   followed by a **Download MP4** button when it finishes. Opening the dialog
   reconnects to an active export, without repeating old completed or failed jobs.
-  The original lecture
-  does not need to be selected. Copies also remain in **Saved exports**.
+  Switching videos updates the dropdown to that video's copies. Copies also remain in **Saved exports**.
   Jobs and completed downloads remain available after a page
   reload; a server restart interrupts unfinished encoding. The original video is
   never overwritten. Choose white-on-black-box, white outlined, or yellow outlined
