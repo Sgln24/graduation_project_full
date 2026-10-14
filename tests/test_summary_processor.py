@@ -67,6 +67,91 @@ class CompleteFakeGeminiModels:
 
 
 class SummaryProcessorTranslationTests(unittest.TestCase):
+    def _gemini_processor(self, models):
+        processor = SummaryProcessor.__new__(SummaryProcessor)
+        processor.client = SimpleNamespace(models=models)
+        processor.model = True
+        processor.model_name = "gemini-test"
+        processor.openai_client = None
+        processor.openai_model_name = "gpt-test"
+        processor._refresh_clients = lambda: None
+        return processor
+
+    def test_usage_counts_targeted_retries_and_marks_missing_usage(self):
+        class MeteredModels(FakeGeminiModels):
+            def generate_content(self, **kwargs):
+                response = super().generate_content(**kwargs)
+                response.usage_metadata = SimpleNamespace(
+                    prompt_token_count=100, candidates_token_count=20,
+                    thoughts_token_count=5, total_token_count=125,
+                )
+                return response
+        transcript = [{"start": index, "duration": 1, "text": text}
+                      for index, text in enumerate(["First", "Second"])]
+        result = asyncio.run(self._gemini_processor(MeteredModels()).translate_transcript(
+            transcript, "de", "gemini-test"))
+        self.assertEqual(result["usage"]["requests"], 2)
+        self.assertEqual(result["usage"]["input_tokens"], 200)
+        self.assertEqual(result["usage"]["output_tokens"], 50)
+        self.assertEqual(result["usage"]["total_tokens"], 250)
+        self.assertTrue(result["usage"]["complete"])
+        missing = asyncio.run(self._gemini_processor(CompleteFakeGeminiModels()).translate_transcript(
+            transcript, "de", "gemini-test"))
+        self.assertFalse(missing["usage"]["complete"])
+        self.assertEqual(missing["usage"]["reported_requests"], 0)
+
+    def test_strict_model_never_falls_back(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._complete = mock.Mock(side_effect=RuntimeError("429 RESOURCE_EXHAUSTED"))
+        with mock.patch("processors.summary_processor.asyncio.sleep", new=mock.AsyncMock()):
+            with self.assertRaisesRegex(RuntimeError, "RESOURCE_EXHAUSTED"):
+                asyncio.run(processor.translate_transcript(
+                    [{"start": 0, "duration": 1, "text": "Hello"}], "de",
+                    "gemini-test", allow_fallback=False))
+        self.assertEqual({call.args[1] for call in processor._complete.call_args_list}, {"gemini-test"})
+        with self.assertRaisesRegex(ValueError, "Choose a model"):
+            asyncio.run(processor.translate_transcript([], "de", allow_fallback=False))
+
+    def test_groq_default_and_usage_are_retained_across_provider_fallback(self):
+        class Completions:
+            def create(self, **kwargs):
+                payload = json.loads(kwargs["messages"][0]["content"].split("\n", 1)[1])
+                return SimpleNamespace(
+                    choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
+                        "translations": [{"id": item["id"], "text": "Translated " + item["text"]}
+                                         for item in payload["lines"]],
+                    })))],
+                    usage=SimpleNamespace(prompt_tokens=80, completion_tokens=20, total_tokens=100),
+                )
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor.groq_client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+        processor.groq_model_name = "openai/gpt-oss-120b"
+        transcript = [{"start": 0, "duration": 1, "text": "Hello"}]
+        result = asyncio.run(processor.translate_transcript(transcript, "de"))
+        self.assertEqual(result["provider"], "Groq")
+        self.assertEqual(result["usage"]["total_tokens"], 100)
+        self.assertTrue(result["usage"]["complete"])
+        processor.groq_client.chat.completions.create = mock.Mock(side_effect=RuntimeError("404 model_not_found"))
+        fallback = asyncio.run(processor.translate_transcript(transcript, "de"))
+        self.assertEqual(fallback["provider"], "Gemini fallback")
+        self.assertEqual(fallback["usage"]["requests"], 2)
+        self.assertEqual(fallback["usage"]["models"], ["Gemini gemini-test", "Groq openai/gpt-oss-120b"])
+        self.assertFalse(fallback["usage"]["complete"])
+
+    def test_changed_vtt_markers_retry_only_invalid_group(self):
+        class MarkedModels(CompleteFakeGeminiModels):
+            def generate_content(self, **kwargs):
+                response = super().generate_content(**kwargs)
+                if len(self.payloads) == 1:
+                    response.text = response.text.replace("[[VTT_0]]", "[[VTT_9]]")
+                return response
+        models = MarkedModels()
+        result = asyncio.run(self._gemini_processor(models).translate_transcript(
+            [{"start": 0, "duration": 2, "text": "Hello[[VTT_0]]World"},
+             {"start": 2, "duration": 1, "text": "Other"}], "de", "gemini-test"))
+        self.assertIn("[[VTT_0]]", result["transcript"][0]["text"])
+        self.assertEqual([item["id"] for item in models.payloads[1]["lines"]], ["segment-0"])
+
     def test_translation_retries_only_missing_ids_and_preserves_fields(self):
         processor = SummaryProcessor.__new__(SummaryProcessor)
         models = FakeGeminiModels()
@@ -435,20 +520,20 @@ class SummaryProviderFallbackTests(unittest.TestCase):
         self.assertGreaterEqual(len(starts), 3)
         self.assertEqual(len(sleeps), 1)
 
-    def test_chapters_with_sections_merge_short_chapters_and_keep_options(self):
+    def test_chapters_preserve_short_distinct_topics_and_keep_options(self):
         processor = self._processor(None, None, None)
         prompts = []
 
         def complete(provider, model, prompt, *args):
             prompts.append(prompt)
             return json.dumps({"chapters": [
-                {"timestamp": "00:00:00", "title": "Greeting", "summary": "Welcome."},
+                {"timestamp": "00:00:00", "title": "Authentication", "summary": "Credentials identify users."},
                 {"timestamp": "00:00:30", "title": "Gradient descent", "summary": "How models learn.",
                  "sections": [
                      {"timestamp": "00:00:40", "title": "Loss functions", "point": "Loss measures error."},
                      {"timestamp": "00:03:00", "title": "Step size", "point": "Small steps are stable."},
                  ]},
-                {"timestamp": "00:06:00", "title": "Aside", "summary": "A short remark."},
+                {"timestamp": "00:06:00", "title": "Rate limits", "summary": "Quotas limit requests."},
                 {"timestamp": "00:06:20", "title": "Evaluation", "sections": [
                     {"timestamp": "00:06:20", "title": "Test data", "point": "Test data stays unseen."},
                 ]},
@@ -461,13 +546,14 @@ class SummaryProviderFallbackTests(unittest.TestCase):
         ))
         self.assertTrue(response.content["success"], response.content)
         chapters = response.content["chapters"]
-        self.assertEqual([chapter["title"] for chapter in chapters], ["Gradient descent", "Evaluation"])
+        self.assertEqual([chapter["title"] for chapter in chapters],
+                         ["Authentication", "Gradient descent", "Rate limits", "Evaluation"])
         self.assertEqual(chapters[0]["timestamp"], "00:00")
         self.assertEqual(
-            [section["title"] for section in chapters[0]["sections"]],
-            ["Greeting", "Loss functions", "Step size", "Aside"],
+            [section["title"] for section in chapters[1]["sections"]],
+            ["Loss functions", "Step size"],
         )
-        self.assertEqual(chapters[0]["sections"][0]["point"], "Welcome.")
+        self.assertEqual(chapters[2]["timestamp"], "06:00")
         self.assertIn("Focus on exam topics", prompts[0])
         self.assertIn("sections", prompts[0])
         self.assertIn("One section per genuinely separate topic", prompts[0])
@@ -531,10 +617,14 @@ class SummaryProviderFallbackTests(unittest.TestCase):
         transcript = [{"start": index * 60, "duration": 60, "text": "word"} for index in range(36)]
         asyncio.run(processor.generate_summary(transcript, None, structure="flat", detail="brief"))
         asyncio.run(processor.generate_summary(transcript, None, structure="sections", detail="detailed"))
-        self.assertIn("about 3 chapters", prompts[0])
+        self.assertIn("broad, clearly distinct subjects", prompts[0])
         self.assertNotIn('"sections"', prompts[0])
-        self.assertIn("about 12 chapters", prompts[1])
+        self.assertIn("independently meaningful learning objectives", prompts[1])
         self.assertIn('"sections"', prompts[1])
+        for prompt in prompts:
+            self.assertNotRegex(prompt, r"about \d+ chapters|covers \d+ minutes")
+            self.assertIn("not its duration", prompt)
+            self.assertIn("Do not target a chapter count", prompt)
         response = asyncio.run(processor.generate_summary(transcript, None, detail="huge"))
         self.assertFalse(response.content["success"])
 

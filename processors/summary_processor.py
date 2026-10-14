@@ -3,6 +3,7 @@ import json
 import re
 import asyncio
 import time
+from contextvars import ContextVar
 from fastapi.responses import JSONResponse
 from google import genai
 from google.genai import types
@@ -48,14 +49,41 @@ FILLER_OPENING = re.compile(
     r"focuses\s+on|talks\s+about|deals\s+with|is\s+about|goes\s+over|reviews))\s*(?:that\s+)?",
     re.IGNORECASE,
 )
-# minutes: target chapter length; min_seconds/min_share: chapters shorter than
-# min(min_seconds, min_share * video length) are merged into a neighbour.
 CHAPTER_DETAIL_LEVELS = {
-    "brief": {"minutes": 12, "section_guidance": "Only broad, clearly different subjects; merge related subtopics", "min_seconds": 240, "min_share": 0.08},
-    "balanced": {"minutes": 6, "section_guidance": "One section per genuinely separate topic; merge examples, steps and continuations of the same topic", "min_seconds": 90, "min_share": 0.04},
-    "detailed": {"minutes": 3, "section_guidance": "Separate meaningful subtopics, but not every sentence, example or transcript fragment", "min_seconds": 30, "min_share": 0.02},
+    "brief": {
+        "chapter_guidance": "Group related learning objectives under broad, clearly distinct subjects.",
+        "section_guidance": "Only broad, clearly different subtopics; merge related explanations",
+    },
+    "balanced": {
+        "chapter_guidance": "One chapter per distinct subject or learning objective. Put related subtopics inside it.",
+        "section_guidance": "One section per genuinely separate topic; merge examples, steps and continuations of the same topic",
+    },
+    "detailed": {
+        "chapter_guidance": "Distinguish independently meaningful learning objectives, not individual steps or examples.",
+        "section_guidance": "Separate meaningful subtopics, but not every sentence, example or transcript fragment",
+    },
 }
 TRANSLATION_CONCURRENCY = max(1, int(os.getenv("TRANSLATION_CONCURRENCY", "4")))
+TRANSLATION_MODELS = {
+    "", *GEMINI_FALLBACK_MODELS, "gemini-2.5-flash", "gemini-2.5-flash-lite",
+    "groq:openai/gpt-oss-120b", "groq:openai/gpt-oss-20b",
+    "groq:llama-3.3-70b-versatile", "gpt-4.1-mini",
+}
+_COMPLETION_USAGE = ContextVar("completion_usage", default=None)
+
+
+def translation_usage(requests):
+    """Account for reported usage only; never present missing usage as zero."""
+    reported = [request for request in requests if request.get("usage") is not None]
+    models = sorted({f"{request['provider']} {request['model']}" for request in requests})
+    return {
+        "requests": len(requests), "reported_requests": len(reported),
+        "complete": bool(requests) and len(reported) == len(requests),
+        "input_tokens": sum(request["usage"]["input_tokens"] for request in reported),
+        "output_tokens": sum(request["usage"]["output_tokens"] for request in reported),
+        "total_tokens": sum(request["usage"]["total_tokens"] for request in reported),
+        "models": models,
+    }
 
 class SummaryProcessor:
     def __init__(self):
@@ -229,6 +257,7 @@ class SummaryProcessor:
                         contents=prompt,
                         config=types.GenerateContentConfig(**config, thinking_config=thinking),
                     )
+                    self._record_completion_usage(provider, response)
                     return response.text
                 except Exception as error:
                     if "thinking" not in str(error).lower():
@@ -240,6 +269,7 @@ class SummaryProcessor:
                 contents=prompt,
                 config=types.GenerateContentConfig(**config),
             )
+            self._record_completion_usage(provider, response)
             return response.text
         client = self.groq_client if provider == "groq" else self.openai_client
         options = {
@@ -254,7 +284,38 @@ class SummaryProcessor:
         if fast and provider == "groq" and "gpt-oss" in model:
             options["extra_body"] = {"reasoning_effort": "low"}
         response = client.chat.completions.create(**options)
+        self._record_completion_usage(provider, response)
         return response.choices[0].message.content
+
+    @staticmethod
+    def _record_completion_usage(provider, response):
+        capture = _COMPLETION_USAGE.get()
+        if capture is None:
+            return
+        usage = getattr(response, "usage_metadata" if provider == "gemini" else "usage", None)
+        if usage is None:
+            return
+        input_tokens = getattr(usage, "prompt_token_count" if provider == "gemini" else "prompt_tokens", None)
+        output_tokens = getattr(usage, "candidates_token_count" if provider == "gemini" else "completion_tokens", None)
+        total_tokens = getattr(usage, "total_token_count" if provider == "gemini" else "total_tokens", None)
+        if not all(isinstance(value, int) and value >= 0 for value in (input_tokens, output_tokens, total_tokens)):
+            return
+        if provider == "gemini":
+            output_tokens += getattr(usage, "thoughts_token_count", 0) or 0
+        capture["usage"] = {
+            "input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens,
+        }
+
+    def translation_models(self):
+        configured = {
+            "gemini": bool(self.model), "groq": bool(getattr(self, "groq_client", None)),
+            "openai": bool(getattr(self, "openai_client", None)),
+        }
+        return [
+            {"id": name, "label": name, "available": configured[self._provider_chain_entry(name)[0]]
+             and self._provider_chain_entry(name) not in getattr(self, "unavailable_models", set())}
+            for name in sorted(TRANSLATION_MODELS) if name and not name.startswith("gemini-2.5")
+        ]
 
     @staticmethod
     def _provider_label(provider, index):
@@ -383,7 +444,6 @@ class SummaryProcessor:
             chapters = self._parse_chapter_list(response_text)
             chapters = self._normalize_chapters(
                 chapters, transcript,
-                min_seconds=min(settings["min_seconds"], transcript_end * settings["min_share"]),
                 end=transcript_end, sectioned=settings["sections"],
             )
             self._save_chapters(video_id, chapters, transcript_language, transcript)
@@ -489,8 +549,8 @@ class SummaryProcessor:
         return f"{seconds // 3600:02d}:{seconds % 3600 // 60:02d}:{seconds % 60:02d}"
 
     @classmethod
-    def _chapter_prompt(cls, lines, start, end, number, total, previous_title, language_instruction, settings):
-        count = max(1, round(max(0.0, end - start) / 60 / settings["minutes"]))
+    def _chapter_prompt(cls, lines, start, end, number, total, previous_title, language_instruction, settings,
+                        previous_context=None):
         scope = (
             f"This is part {number} of {total} of one lecture transcript, from {cls._stamp(start)} to {cls._stamp(end)}."
             if total > 1 else
@@ -503,8 +563,13 @@ class SummaryProcessor:
         guidance = [
             scope,
             language_instruction,
-            f"Divide it into about {count} chapter{'s' if count != 1 else ''} that outline the main topics "
-            f"(fewer if the topic does not change); a chapter normally covers {settings['minutes']} minutes or more. "
+            "Organize the lecture by actual subjects and learning objectives, not its duration. "
+            f"{settings['chapter_guidance']} "
+            "Do not target a chapter count, duration, equal-sized chapters or a section limit. "
+            "A brief but distinct substantive topic can be its own chapter; a long explanation of one topic stays together. "
+            "Start a new chapter when the subject or learning objective genuinely changes, even if the previous "
+            "chapter already has many sections. Keep examples, demonstrations, troubleshooting and continuations "
+            "with the subject they explain. Do not put unrelated subjects under a vague umbrella title. "
             "Never make a chapter out of a brief remark such as a greeting or an organisational note: "
             + ("make it a section of the neighbouring chapter instead." if settings["sections"]
                else "include it in the neighbouring chapter instead."),
@@ -538,6 +603,12 @@ class SummaryProcessor:
             )
             example = {"chapters": [{"timestamp": "00:00:00", "title": "Course overview"}]}
         if previous_title:
+            if previous_context:
+                guidance.append("Current chapter context: " + json.dumps(previous_context, ensure_ascii=False))
+            guidance.append(
+                "Transcript part boundaries are technical request boundaries, not topic boundaries. "
+                "Do not start a chapter or section merely because a new part begins."
+            )
             if settings["sections"]:
                 example["continued_sections"] = []
                 guidance.append(
@@ -619,6 +690,14 @@ class SummaryProcessor:
                 [line for _, line in items], float(items[0][0].get("start", 0)), part_end(items),
                 number, total, chapters[-1]["title"] if chapters and chapters[-1].get("title") else None,
                 language_instruction, settings,
+                previous_context={
+                    "title": chapters[-1].get("title"),
+                    "summary": chapters[-1].get("summary"),
+                    "recent_sections": [
+                        section.get("title") for section in (chapters[-1].get("sections") or [])[-4:]
+                        if isinstance(section, dict)
+                    ],
+                } if chapters else None,
             )
             text = None
             invalid_json = 0
@@ -682,29 +761,36 @@ class SummaryProcessor:
 
     async def translate_transcript(
         self, transcript, target_language, requested_model=None, _chain=None, _chain_offset=0,
-        on_progress=None, _done=None, _started_at=None,
+        on_progress=None, _done=None, _started_at=None, allow_fallback=True, _requests=None,
     ):
         """Translate transcript segments in bounded concurrent batches.
 
         Batches that already succeeded are kept when falling back to another model.
         """
         if _chain is None:
+            if not isinstance(allow_fallback, bool):
+                raise ValueError("Allow fallback must be true or false")
+            if not allow_fallback and not requested_model:
+                raise ValueError("Choose a model when automatic fallback is disabled")
             self._refresh_clients()
             _chain = self._provider_chain(requested_model, prefer_groq=True)
             requested_pair = self._provider_chain_entry(requested_model)
             if (
                 requested_model
-                and requested_pair not in getattr(self, "unavailable_models", set())
+                and (not allow_fallback or requested_pair not in getattr(self, "unavailable_models", set()))
                 and (not _chain or _chain[0] != requested_pair)
             ):
                 raise RuntimeError(
-                    f"Model {requested_model} was selected, but its API key is not configured."
+                    f"Model {requested_model} is unavailable or its API key is not configured."
                 )
+            if not allow_fallback:
+                _chain = _chain[:1]
         if not _chain:
             raise RuntimeError(self._no_provider_message())
         provider, selected_model = _chain[0]
         done = {} if _done is None else _done
         started_at = _started_at or time.monotonic()
+        requests = [] if _requests is None else _requests
 
         translation_items = [
             {
@@ -749,6 +835,7 @@ class SummaryProcessor:
                     "model": selected_model,
                     "elapsed_seconds": round(time.monotonic() - started_at, 1),
                     "message": message,
+                    "usage": translation_usage(requests),
                 })
             except Exception as error:
                 print(f"Translation progress callback failed: {error}")
@@ -788,12 +875,18 @@ class SummaryProcessor:
                         ],
                         "context_after": context_after,
                     }
+                    marker_rule = (
+                        "Preserve every [[VTT_n]] marker exactly once, in its original order; these protect "
+                        "caption boundaries, line breaks and formatting. Translate text between markers "
+                        "without moving it across them. "
+                    ) if any("[[VTT_" in item["text"] for item in requested_items) else ""
                     prompt = (
                         f"Translate every item in lines into language code {target_language}. "
                         "Use context_before and context_after only to understand the surrounding "
                         "meaning; do not translate or return those context lines. Preserve terminology "
                         "and fit each translation naturally within its approximate speaking duration. "
-                        "Return every line ID exactly once. Never merge or split lines. Return only a "
+                        "Return every line ID exactly once. Never merge or split lines. "
+                        + marker_rule + "Return only a "
                         "JSON object with a translations array containing objects with exactly these "
                         "fields: id and text.\n"
                         + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -802,11 +895,18 @@ class SummaryProcessor:
                     last_error = None
                     for attempt in range(attempts):
                         try:
+                            request_usage = {"provider": PROVIDER_LABELS[provider], "model": selected_model}
+                            requests.append(request_usage)
+                            def complete(request_usage=request_usage):
+                                token = _COMPLETION_USAGE.set(request_usage)
+                                try:
+                                    return self._complete(
+                                        provider, selected_model, prompt, 0.2, True, max_output_tokens, True,
+                                    )
+                                finally:
+                                    _COMPLETION_USAGE.reset(token)
                             raw_result = await asyncio.wait_for(
-                                asyncio.to_thread(
-                                    self._complete, provider, selected_model, prompt,
-                                    0.2, True, max_output_tokens, True,
-                                ),
+                                asyncio.to_thread(complete),
                                 timeout=120,
                             )
                             break
@@ -815,9 +915,10 @@ class SummaryProcessor:
                             if self._is_model_unavailable(error):
                                 break
                             if attempt < attempts - 1:
-                                await asyncio.sleep(
-                                    self._retry_delay(error) if provider == "groq" else 1
-                                )
+                                delay = self._retry_delay(error) if provider == "groq" else 1
+                                report(f"{model_label}: batch {batch_number} request failed; "
+                                       f"retrying in {delay:.1f}s: {str(error)[:180]}")
+                                await asyncio.sleep(delay)
                     if raw_result is None:
                         raise RuntimeError(
                             f"Translation batch {batch_number} {request_label} request failed "
@@ -828,6 +929,7 @@ class SummaryProcessor:
                         parsed = json.loads(raw_result)
                     except (TypeError, json.JSONDecodeError) as error:
                         if retry_invalid_response:
+                            report(f"{model_label}: batch {batch_number} returned invalid JSON; retrying in 1s")
                             await asyncio.sleep(1)
                             return await request_translation(
                                 requested_items,
@@ -841,6 +943,7 @@ class SummaryProcessor:
                         parsed = parsed.get("translations")
                     if not isinstance(parsed, list):
                         if retry_invalid_response:
+                            report(f"{model_label}: batch {batch_number} returned an invalid response; retrying in 1s")
                             await asyncio.sleep(1)
                             return await request_translation(
                                 requested_items,
@@ -851,7 +954,7 @@ class SummaryProcessor:
                             f"Translation batch {batch_number} returned an invalid response"
                         )
                     expected = {item["id"] for item in requested_items}
-                    return {
+                    translations = {
                         str(item["id"]): str(item["text"]).strip()
                         for item in parsed
                         if (
@@ -860,6 +963,20 @@ class SummaryProcessor:
                             and str(item.get("text", "")).strip()
                         )
                     }
+                    for item in requested_items:
+                        text = translations.get(item["id"])
+                        markers = re.findall(r"\[\[VTT_[0-9]+\]\]", item["text"])
+                        if text is not None and markers:
+                            translated_markers = re.findall(r"\[\[VTT_[0-9]+\]\]", text)
+                            if markers != translated_markers:
+                                translations.pop(item["id"])
+                                continue
+                            source_parts = re.split(r"\[\[VTT_[0-9]+\]\]", item["text"])
+                            result_parts = re.split(r"\[\[VTT_[0-9]+\]\]", text)
+                            if any(source.strip() and not translated.strip()
+                                   for source, translated in zip(source_parts, result_parts)):
+                                translations.pop(item["id"])
+                    return translations
 
                 try:
                     translated_by_id = await request_translation(batch, "initial")
@@ -868,6 +985,8 @@ class SummaryProcessor:
                         if item["id"] not in translated_by_id
                     ]
                     if missing:
+                        report(f"{model_label}: retrying {len(missing)} missing or invalid lines "
+                               f"in batch {batch_number}")
                         translated_by_id.update(
                             await request_translation(missing, "missing-segment")
                         )
@@ -922,6 +1041,7 @@ class SummaryProcessor:
                 transcript, target_language, _chain=_chain[1:],
                 _chain_offset=_chain_offset + 1, on_progress=on_progress,
                 _done=done, _started_at=started_at,
+                allow_fallback=allow_fallback, _requests=requests,
             )
             result.setdefault("fallback_reason", str(error)[:300])
             return result
@@ -945,6 +1065,7 @@ class SummaryProcessor:
             "batch_count": len(batches),
             "context_lines": context_lines,
             "elapsed_seconds": round(time.monotonic() - started_at, 1),
+            "usage": translation_usage(requests),
         }
 
     @staticmethod
@@ -1024,12 +1145,8 @@ class SummaryProcessor:
             return None
 
     @staticmethod
-    def _normalize_chapters(chapters: list, transcript: list, min_seconds=0, end=None, sectioned=True) -> list:
-        """Ensure every chapter has a usable timestamp and title; tidy sections.
-
-        Chapters shorter than min_seconds are merged into a neighbour (as a
-        section when sectioned is true).
-        """
+    def _normalize_chapters(chapters: list, transcript: list, end=None, sectioned=True) -> list:
+        """Tidy timestamps and sections without changing topic boundaries by duration."""
         if not isinstance(chapters, list):
             raise ValueError("The AI returned chapters in an invalid format")
 
@@ -1078,27 +1195,6 @@ class SummaryProcessor:
                 merged[-1]["sections"].extend(entry["sections"])
                 continue
             merged.append(entry)
-
-        while min_seconds > 0 and len(merged) > 1:
-            short = next((
-                index for index, entry in enumerate(merged)
-                if (merged[index + 1]["start"] if index + 1 < len(merged) else end) is not None
-                and (merged[index + 1]["start"] if index + 1 < len(merged) else end) - entry["start"] < min_seconds
-            ), None)
-            if short is None:
-                break
-            entry = merged.pop(short)
-            moved = []
-            if sectioned:
-                moved = entry["sections"] or [{
-                    "start": entry["start"], "title": entry["title"],
-                    **({"point": entry["summary"]} if entry.get("summary") else {}),
-                }]
-            if short > 0:
-                merged[short - 1]["sections"].extend(moved)
-            else:
-                merged[0]["sections"][:0] = moved
-                merged[0]["start"] = entry["start"]
 
         normalized = []
         for index, entry in enumerate(merged):

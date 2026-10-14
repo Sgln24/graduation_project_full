@@ -62,7 +62,15 @@
                     onclick="document.getElementById('videoFile').click()">
                 <i class="fas fa-upload"></i> Upload Video
             </button>
-            <button id="openVttBatchBtn" class="btn btn-secondary btn-options" type="button">Translate VTT files</button>
+            <details id="extraOptionsMenu" class="extra-options">
+                <summary class="btn btn-secondary">Extra options</summary>
+                <div class="extra-options-menu">
+                    <button id="openVttBatchBtn" class="btn btn-secondary btn-options" type="button">Translate VTT files</button>
+                    <button id="settingsBtn" class="btn btn-secondary btn-options" type="button" aria-label="Settings" title="Settings">
+                        <i class="fas fa-cog"></i> Settings
+                    </button>
+                </div>
+            </details>
             <dialog id="vttBatchDialog" class="options-dialog" aria-labelledby="vttBatchHeading">
                 <form method="dialog">
                     <div class="dialog-header">
@@ -81,21 +89,24 @@
                     </select>
                     <label for="vttBatchModel">Translation model</label>
                     <select id="vttBatchModel"></select>
-                    <small>Uses your configured translation provider. Timestamps and cue formatting stay unchanged.</small>
+                    <small id="vttBatchModelStatus" role="status"></small>
+                    <label><input id="vttBatchFallback" type="checkbox" checked> Allow model fallback</label>
+                    <details class="ui-disclosure"><summary>Help</summary><p>Auto prefers configured Groq.
+                        Groq has request and token limits. Other providers may incur charges, including fallback calls.
+                        Turn fallback off and choose a model to use only that model.
+                        Timestamps and cue formatting stay unchanged. Results include reported token usage.</p></details>
                     <div class="dialog-actions">
                         <button class="btn btn-secondary" type="submit">Close</button>
                         <button id="translateVttBatchBtn" class="btn btn-primary" type="button">Translate files</button>
                     </div>
                     <div id="vttBatchProgress" role="status" aria-live="polite"></div>
+                    <small id="vttBatchDetails" style="display: block;" role="status"></small>
                     <label for="vttBatchSaved">Saved translations</label>
                     <select id="vttBatchSaved"><option value="">Choose a completed batch</option></select>
                     <button id="downloadVttBatchBtn" class="btn btn-secondary btn-action" type="button" disabled>Download ZIP</button>
                     <small id="vttBatchHistoryStatus" role="status" aria-live="polite"></small>
                 </form>
             </dialog>
-            <button id="settingsBtn" class="btn btn-secondary btn-options" type="button" aria-label="Settings" title="Settings">
-                <i class="fas fa-cog"></i> Settings
-            </button>
         </div>
 
         <div id="errorAlert" class="alert alert-error"></div>
@@ -312,9 +323,13 @@
                                     <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
                                     <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
                                     <option value="groq:openai/gpt-oss-120b">Groq GPT-OSS 120B (free)</option>
+                                    <option value="groq:openai/gpt-oss-20b">Groq GPT-OSS 20B</option>
+                                    <option value="groq:llama-3.3-70b-versatile">Groq Llama 3.3 70B</option>
                                     <option value="gpt-4.1-mini">OpenAI GPT-4.1 mini (paid)</option>
                                 </select>
                                 <small id="translationModelStatus">Checking configured translation models...</small>
+                                <label><input id="translationFallback" type="checkbox" checked> Allow model fallback</label>
+                                <small>Turn off and choose a model to use only that model. Provider limits and charges apply.</small>
                                 <button id="translateTranscriptBtn" class="btn btn-secondary btn-action" type="button" disabled>Translate transcript</button>
                             </div>
                             <div class="dialog-actions">
@@ -458,9 +473,9 @@
                                 </select>
                                 <label for="chapterDetail">Detail level</label>
                                 <select id="chapterDetail">
-                                    <option value="brief">Brief: few long chapters (~12 min)</option>
-                                    <option value="balanced" selected>Balanced (~6 min per chapter)</option>
-                                    <option value="detailed">Detailed: many short chapters (~3 min)</option>
+                                    <option value="brief">Brief: broad subjects</option>
+                                    <option value="balanced" selected>Balanced: distinct topics</option>
+                                    <option value="detailed">Detailed: finer learning objectives</option>
                                 </select>
                                 <label for="chapterInstructions">Extra instructions (optional)</label>
                                 <textarea id="chapterInstructions" rows="3" maxlength="1000" placeholder="e.g. Focus on exam-relevant topics; keep English technical terms; ignore the organisational part"></textarea>
@@ -469,7 +484,10 @@
                                     <div class="disclosure-content">
                                         <p>Chapters use the open transcript's language and are saved with it. Select a translation first for chapters in that language.</p>
                                         <p>Automatic tries Groq, then Gemini and OpenAI. An explicit choice is tried first, with availability fallbacks. Configure API keys on the server, not in the browser.</p>
-                                        <p>Sections follow distinct topics. Related examples and short chapters are merged. Exports reuse saved sections without extra AI calls.</p>
+                                        <p>Chapters follow subjects and learning objectives; sections follow meaningful subtopics.
+                                            Examples, demonstrations and continuations stay together. Detail changes topic granularity,
+                                            not a chapter count or duration. No time-based splits, merges or section caps.
+                                            Exports reuse saved sections without extra AI calls.</p>
                                         <p>Grouping, intervals, timestamps and formats are in Export chapters.</p>
                                     </div>
                                 </details>

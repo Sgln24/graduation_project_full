@@ -1305,6 +1305,35 @@ body .search-highlight.active {
     color: var(--text-2);
 }
 
+.extra-options {
+    position: relative;
+}
+
+.extra-options > summary {
+    list-style: none;
+    cursor: pointer;
+}
+
+.extra-options > summary::after {
+    content: "\25be";
+    margin-left: 6px;
+}
+
+.extra-options-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 100;
+    display: grid;
+    gap: 6px;
+    min-width: 190px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-1);
+    box-shadow: var(--shadow-lg);
+}
+
 .ui-disclosure > summary {
     cursor: pointer;
     font-weight: 600;

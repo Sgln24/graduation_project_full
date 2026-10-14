@@ -11,9 +11,11 @@ import time
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.testclient import TestClient
 from export_jobs import ExportJobStore
+from processors.summary_processor import SummaryProcessor
 from vtt_translation import (
     parse_vtt, translated_vtt, translate_vtt_batch, MAX_FILES,
     MAX_FILE_BYTES, MAX_BATCH_BYTES, TRANSLATION_MODELS,
+    grouped_vtt_segments, ungroup_vtt_segments,
 )
 
 
@@ -38,6 +40,30 @@ Second line
 
 
 class VttTranslationTests(unittest.TestCase):
+    def test_grouping_reduces_ids_without_changing_cues_or_formatting(self):
+        content = b"WEBVTT\n\n" + b"\n\n".join(
+            f"cue-{index}\n00:{index // 60:02d}:{index % 60:02d}.000 --> "
+            f"00:{(index + 1) // 60:02d}:{(index + 1) % 60:02d}.000\n"
+            "<b>Hello</b>\nWorld".encode() for index in range(80)
+        )
+        parsed = parse_vtt(content)
+        groups, boundaries = grouped_vtt_segments(parsed)
+        self.assertEqual(len(parsed["segments"]), 160)
+        self.assertEqual(len(groups), 20, "Eight fragments share each translation item")
+        before = SummaryProcessor._translation_batches(parsed["segments"], 30, 2500)
+        after = SummaryProcessor._translation_batches(groups, 30, 2500)
+        self.assertEqual(len(before), 6)
+        self.assertEqual(len(after), 1, "Short-fragment fixture needs one batch instead of six")
+        translated = [{"text": item["text"].replace("Hello", "Hallo").replace("World", "Welt")}
+                      for item in groups]
+        output = translated_vtt(parsed, ungroup_vtt_segments(translated, boundaries))
+        self.assertEqual(parse_vtt(output.encode())["cues"], 80)
+        self.assertEqual(output.count("<b>Hallo</b>\nWelt"), 80)
+        self.assertEqual(content.decode().replace("Hello", "Hallo").replace("World", "Welt") + "\n", output)
+        translated[0]["text"] = translated[0]["text"].replace(boundaries[0][0], "")
+        with self.assertRaisesRegex(ValueError, "boundaries"):
+            ungroup_vtt_segments(translated, boundaries)
+
     def test_preserves_metadata_timestamps_markup_and_newlines(self):
         parsed = parse_vtt(b"\xef\xbb\xbf" + VTT.replace(b"\n", b"\r\n"))
         self.assertEqual(parsed["cues"], 2)
@@ -82,7 +108,7 @@ class VttTranslationTests(unittest.TestCase):
 
     def test_batch_zip_names_unicode_progress_and_failure(self):
         calls = []
-        async def translate(segments, target, model, on_progress):
+        async def translate(segments, target, model, on_progress, allow_fallback=True):
             calls.append((segments, target, model))
             on_progress({"completed_segments": len(segments)})
             return {"transcript": [{"text": "\u0645\u0631\u062d\u0628\u0627"} for _ in segments]}
@@ -94,8 +120,9 @@ class VttTranslationTests(unittest.TestCase):
                 [(name, parse_vtt(content)) for name in ("Lecture.vtt", "lecture.vtt", "../Other.vtt")],
                 "ar", "", processor, temporary, steps.append))
             with zipfile.ZipFile(response.path) as archive:
-                self.assertEqual(archive.namelist(), ["Lecture_AR.vtt", "lecture_AR_2.vtt", "Other_AR.vtt"])
-                for name in archive.namelist():
+                self.assertEqual(archive.namelist(),
+                                 ["Lecture_AR.vtt", "lecture_AR_2.vtt", "Other_AR.vtt", "translation-report.json"])
+                for name in archive.namelist()[:-1]:
                     self.assertIn("\u0645\u0631\u062d\u0628\u0627", archive.read(name).decode("utf-8"))
                     self.assertIn("00:00.000 --> 00:02.000", archive.read(name).decode("utf-8"))
             self.assertEqual(len(calls), 3)
@@ -134,6 +161,8 @@ class VttTranslationTests(unittest.TestCase):
         self.assertEqual(args[1:4], ("de", data["model"], processor))
         for bad in ({"target_language": "unknown"}, {"target_language": "en", "model": "unknown"}):
             self.assertEqual(client.post("/vtt_translation_jobs", data=bad, files=files).status_code, 400)
+        self.assertEqual(client.post("/vtt_translation_jobs",
+                         data={"target_language": "en", "allow_fallback": "false"}, files=files).status_code, 400)
         self.assertEqual(client.post("/vtt_translation_jobs", data=data,
                                     files=[("files", ("x.txt", VTT))]).status_code, 400)
         self.assertEqual(client.post("/vtt_translation_jobs", data=data,
@@ -144,8 +173,9 @@ class VttTranslationTests(unittest.TestCase):
                                     files=files * 16).status_code, 400)
         with tempfile.TemporaryDirectory() as temporary:
             store = ExportJobStore(Path(temporary) / "jobs")
-            async def translate(segments, target, model, on_progress):
-                return {"transcript": [{"text": "Translated"} for _ in segments]}
+            async def translate(segments, target, model, on_progress, allow_fallback=True):
+                return {"transcript": [{"text": item["text"].replace("Hello", "Translated")}
+                                       for item in segments]}
             namespace["export_jobs"] = store
             namespace["summary_processor"] = SimpleNamespace(translate_transcript=translate)
             namespace["translate_vtt_batch"] = translate_vtt_batch
@@ -161,7 +191,7 @@ class VttTranslationTests(unittest.TestCase):
             self.assertEqual(job["status"], "complete", job)
             persisted = store.file(job_id, job["download_file"])
             with zipfile.ZipFile(persisted) as archive:
-                self.assertEqual(archive.namelist(), ["One_DE.vtt", "Two_DE.vtt"])
+                self.assertEqual(archive.namelist(), ["One_DE.vtt", "Two_DE.vtt", "translation-report.json"])
                 self.assertIn(b"Translated", archive.read("One_DE.vtt"))
             self.assertEqual(ExportJobStore(store.root).read(job_id)["status"], "complete")
         namespace["MAX_FILE_BYTES"] = 100

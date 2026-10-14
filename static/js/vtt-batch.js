@@ -8,6 +8,11 @@ let savedBatches = [];
 let historyKey = null;
 const element = id => document.getElementById(id);
 
+function updateBatchDetails(job) {
+    const details = element('vttBatchDetails');
+    if (details) details.textContent = job?.steps?.find(step => step.message.startsWith('Translation result:'))?.message || '';
+}
+
 async function readResponse(response) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
@@ -41,6 +46,7 @@ export async function refreshVttBatches() {
         status.textContent = savedBatches.length ? '' : 'No completed batches yet.';
         const interrupted = data.exports.find(job => job.status === 'error');
         if (!working && interrupted) status.textContent = `Previous batch failed: ${interrupted.error}`;
+        if (!working) updateBatchDetails(savedBatches.find(job => job.id === select.value));
     } catch (error) {
         status.textContent = `Could not load saved batches: ${error.message}`;
     }
@@ -48,6 +54,10 @@ export async function refreshVttBatches() {
 
 export async function translateVttFiles() {
     if (working) return;
+    if (element('translationModel').dataset?.available === 'false') {
+        showError(element('translationModelStatus')?.textContent || 'No translation provider is available.');
+        return;
+    }
     const files = Array.from(element('vttBatchFiles').files || []);
     if (!files.length || files.length > 30) {
         showError('Choose between 1 and 30 VTT files.');
@@ -62,11 +72,21 @@ export async function translateVttFiles() {
         showError('Limit: 5 MB per file and 20 MB per batch.');
         return;
     }
+    const allowFallback = element('vttBatchFallback')?.checked ?? true;
+    if (!allowFallback && !element('vttBatchModel').value) {
+        showError('Choose a model when automatic fallback is disabled.');
+        return;
+    }
+    if (element('vttBatchModel').selectedOptions?.[0]?.disabled) {
+        showError('The selected translation model is unavailable. Choose another model.');
+        return;
+    }
     working = true;
     const button = element('translateVttBatchBtn');
     button.disabled = true;
     const container = element('vttBatchProgress');
     container.replaceChildren();
+    updateBatchDetails(null);
     const message = document.createElement('p');
     message.textContent = 'Uploading VTT files...';
     container.append(message);
@@ -76,6 +96,7 @@ export async function translateVttFiles() {
         files.forEach(file => form.append('files', file));
         form.append('target_language', element('vttBatchTarget').value);
         form.append('model', element('vttBatchModel').value);
+        form.append('allow_fallback', String(allowFallback));
         const result = await readResponse(await fetch('/vtt_translation_jobs', {method: 'POST', body: form}));
         localStorage.setItem('activeVttBatchJob', result.job_id);
         await watchVttBatch(result.job_id, message);
@@ -110,6 +131,7 @@ async function watchVttBatch(jobId, message) {
         stopElapsed = startElapsedTimer(container, status.elapsed || 0, false);
         completed = true;
         message.textContent = 'Translation ready. Download your ZIP below.';
+        updateBatchDetails(status);
         await refreshVttBatches();
         element('vttBatchSaved').value = jobId;
         element('downloadVttBatchBtn').disabled = !element('vttBatchSaved').value;
@@ -138,7 +160,10 @@ async function downloadVttBatch() {
         await saveBlobToUserLocation(await response.blob(), job.filename, element('vttBatchDialog'));
         status.textContent = 'ZIP sent to your save dialog or browser downloads.';
     } catch (error) {
-        status.textContent = error.name === 'AbortError' ? 'Save cancelled.' : `Could not download ZIP: ${error.message}`;
+        const message = error.name === 'TypeError' && /fetch|network/i.test(error.message)
+            ? 'Cannot reach the server. Your saved batch is kept; retry when the app is available.'
+            : error.message;
+        status.textContent = error.name === 'AbortError' ? 'Save cancelled.' : `Could not download ZIP: ${message}`;
         if (error.name !== 'AbortError') showError(status.textContent);
     } finally {
         stopElapsed();
@@ -147,13 +172,25 @@ async function downloadVttBatch() {
     }
 }
 
-export function initVttBatch() {
+export function initVttBatch(refreshModels) {
     element('openVttBatchBtn').addEventListener('click', async () => {
         const model = element('vttBatchModel');
-        if (!model.options.length) {
-            model.replaceChildren(...Array.from(element('translationModel').children, child => child.cloneNode(true)));
-        }
+        const selectedModel = model.value;
+        const menu = element('extraOptionsMenu');
+        if (menu) menu.open = false;
         openOptionsDialog(element('vttBatchDialog'));
+        element('translateVttBatchBtn').disabled = true;
+        try {
+            await refreshModels?.();
+        } finally {
+            element('translateVttBatchBtn').disabled = working;
+        }
+        model.replaceChildren(...Array.from(element('translationModel').children, child => child.cloneNode(true)));
+        model.value = selectedModel;
+        if (model.selectedOptions?.[0]?.disabled) model.value = '';
+        const status = element('vttBatchModelStatus');
+        if (status) status.textContent = element('translationModel').dataset?.available === 'false'
+            ? element('translationModelStatus')?.textContent || 'No translation provider is available.' : '';
         await refreshVttBatches();
         const jobId = localStorage.getItem('activeVttBatchJob');
         if (!jobId || working) return;
@@ -177,5 +214,6 @@ export function initVttBatch() {
     element('downloadVttBatchBtn').addEventListener('click', () => void downloadVttBatch());
     element('vttBatchSaved').addEventListener('change', () => {
         element('downloadVttBatchBtn').disabled = downloading || !element('vttBatchSaved').value;
+        updateBatchDetails(savedBatches.find(job => job.id === element('vttBatchSaved').value));
     });
 }

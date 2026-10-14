@@ -396,6 +396,12 @@ export async function translateTranscript() {
     }
     const originalTranscript = state.currentTranscript.map((item) => ({ ...item }));
     const selectedModel = elements.translationModel?.value || '';
+    const allowFallback = document.getElementById('translationFallback')?.checked ?? true;
+    if (!allowFallback && !selectedModel) {
+        if (button) button.disabled = false;
+        showError('Choose a model when automatic fallback is disabled.');
+        return;
+    }
     const selectedModelLabel = elements.translationModel?.selectedOptions[0]?.textContent || 'Auto';
     const startedAt = Date.now();
     const updateElapsed = () => {
@@ -403,7 +409,7 @@ export async function translateTranscript() {
         if (button) button.textContent = `Translating with ${selectedModelLabel}… ${elapsed}s`;
         if (elements.translationModelStatus) {
             elements.translationModelStatus.textContent =
-                `Translation is running with ${selectedModelLabel} (${elapsed}s elapsed). Long transcripts are processed in parallel batches.`;
+                `Translation requested: ${selectedModelLabel} (${elapsed}s elapsed).`;
         }
     };
     updateElapsed();
@@ -459,7 +465,8 @@ export async function translateTranscript() {
             body: JSON.stringify({
                 transcript: state.currentTranscript,
                 target_language: target,
-                model: selectedModel
+                model: selectedModel,
+                allow_fallback: allowFallback
             })
         });
         const data = await readJsonResponse(response, 'Transcript translation');
@@ -485,8 +492,13 @@ export async function translateTranscript() {
             state.videoChapters = data.chapters;
             updateChapters(data.chapters);
         }
+        const usage = data.usage;
+        const tokenSummary = usage?.reported_requests
+            ? `${usage.total_tokens.toLocaleString()} tokens (${usage.input_tokens.toLocaleString()} input, ${usage.output_tokens.toLocaleString()} output)${usage.complete ? '' : '; partial usage'}`
+            : 'Token usage unavailable';
+        const models = usage?.models?.join(', ') || `${data.provider} ${data.model}`;
         const translationSummary =
-            `${data.provider} ${data.model}; ${data.batch_count} batch${data.batch_count === 1 ? '' : 'es'} in ${data.elapsed_seconds}s`;
+            `${models}; ${data.batch_count} batch${data.batch_count === 1 ? '' : 'es'} in ${data.elapsed_seconds}s; ${tokenSummary}`;
         if (elements.translationModelStatus) {
             elements.translationModelStatus.textContent = `Last translation: ${translationSummary}.`;
         }
@@ -538,7 +550,23 @@ export async function updateTranslationModelStatus() {
         }
         const defaultDescription = `${data.translation_default_provider} ${data.translation_default_model}`;
         elements.translationModelStatus.textContent =
-            `Auto currently uses ${defaultDescription}. Long transcripts are translated in parallel batches.`;
+            `Auto currently uses ${defaultDescription}. Groq uses sequential batches within provider limits; other providers use parallel batches.`;
+        if (Array.isArray(data.translation_models)) {
+            const selected = elements.translationModel.value;
+            const automatic = document.createElement('option');
+            automatic.value = '';
+            automatic.textContent = 'Auto (Groq preferred when configured)';
+            elements.translationModel.replaceChildren(automatic);
+            for (const model of data.translation_models) {
+                const option = document.createElement('option');
+                option.value = model.id;
+                option.textContent = model.label;
+                option.disabled = !model.available;
+                elements.translationModel.append(option);
+            }
+            elements.translationModel.value = selected;
+            if (elements.translationModel.selectedIndex < 0) elements.translationModel.value = '';
+        }
         [...elements.translationModel.options].forEach((option) => {
             if (option.value.startsWith('gemini-')) option.disabled = !data.gemini_configured;
             if (option.value.startsWith('groq:')) option.disabled = !data.groq_configured;

@@ -474,7 +474,7 @@ function initApp() {
     document.addEventListener('transcriptUpdated', () => void refreshSavedExports());
     initTranscriptVersions();
     initCaptionExport();
-    initVttBatch();
+    initVttBatch(updateTranslationModelStatus);
     document.addEventListener('chaptersUpdated', () => void refreshSavedExports());
     bind(document.getElementById('refreshSavedExportsBtn'), 'click', refreshSavedExports);
     bind(elements.regenerateTranscriptBtn, 'click', () => regenerateTranscript());
@@ -600,7 +600,10 @@ function initApp() {
     bind(elements.fuzzySearchToggle, 'change', toggleFuzzySearch);
     
     // Settings modal
-    bind(elements.settingsBtn, 'click', openSettingsModal);
+    bind(elements.settingsBtn, 'click', () => {
+        document.getElementById('extraOptionsMenu').open = false;
+        openSettingsModal();
+    });
     bind(elements.closeSettingsBtn, 'click', closeSettingsModal);
     bind(elements.saveSettingsBtn, 'click', saveSettings);
     

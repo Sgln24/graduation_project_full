@@ -106,6 +106,7 @@ async def runtime_status():
             if default_chain else None
         ),
         "translation_default_model": default_chain[0][1] if default_chain else None,
+        "translation_models": summary_processor.translation_models(),
         "ai_fallback_chain": [f"{provider}:{model}" for provider, model in default_chain],
         "gemini_configured": bool(summary_processor.model),
         "openai_configured": bool(summary_processor.openai_client),
@@ -252,14 +253,13 @@ async def translate_transcript(video_id: str, request: Request):
     transcript = data.get("transcript", [])
     target = data.get("target_language")
     requested_model = data.get("model") or None
+    allow_fallback = data.get("allow_fallback", True)
     if target not in {"de", "en", "ar", "pl"}:
         raise HTTPException(status_code=400, detail="Unsupported translation language")
-    if requested_model not in {
-        None, "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite",
-        "gemini-2.5-flash", "gemini-2.5-flash-lite",
-        "groq:openai/gpt-oss-120b", "gpt-4.1-mini",
-    }:
+    if (requested_model or "") not in TRANSLATION_MODELS:
         raise HTTPException(status_code=400, detail="Unsupported translation model")
+    if not isinstance(allow_fallback, bool) or (not allow_fallback and not requested_model):
+        raise HTTPException(status_code=400, detail="Choose a model when automatic fallback is disabled")
     if (
         not isinstance(transcript, list)
         or not transcript
@@ -319,7 +319,8 @@ async def translate_transcript(video_id: str, request: Request):
 
     try:
         translation = await summary_processor.translate_transcript(
-            [*transcript, *chapter_segments], target, requested_model, on_progress=on_progress
+            [*transcript, *chapter_segments], target, requested_model, on_progress=on_progress,
+            allow_fallback=allow_fallback,
         )
     except (RuntimeError, ValueError, asyncio.TimeoutError, json.JSONDecodeError) as error:
         translation_progress[progress_key] = {
@@ -337,6 +338,7 @@ async def translate_transcript(video_id: str, request: Request):
         "total_segments": len(translation["transcript"]),
         "message": f"Translated with {translation['provider']} {translation['model']}",
         "elapsed_seconds": translation["elapsed_seconds"],
+        "usage": translation.get("usage"),
         "updated_at": time.time(),
     }
     translated = translation["transcript"][:len(transcript)]
@@ -376,6 +378,7 @@ async def translate_transcript(video_id: str, request: Request):
         "model": translation["model"],
         "batch_count": translation["batch_count"],
         "elapsed_seconds": translation["elapsed_seconds"],
+        "usage": translation.get("usage"),
     }
 
 @app.get("/transcript_versions/{video_id}")
@@ -1941,12 +1944,15 @@ export_jobs = ExportJobStore(EXPORTS_DIR / "jobs")
 @app.post("/vtt_translation_jobs")
 async def start_vtt_translation_job(
     files: list[UploadFile] = File(...), target_language: str = Form(...), model: str = Form(""),
+    allow_fallback: bool = Form(True),
 ):
     try:
         if target_language not in {"en", "de", "ar", "pl"}:
             raise HTTPException(status_code=400, detail="Unsupported translation language")
         if model not in TRANSLATION_MODELS:
             raise HTTPException(status_code=400, detail="Unsupported translation model")
+        if not allow_fallback and not model:
+            raise HTTPException(status_code=400, detail="Choose a model when automatic fallback is disabled")
         if not 1 <= len(files) <= MAX_FILES:
             raise HTTPException(status_code=400, detail=f"Choose between 1 and {MAX_FILES} VTT files")
         parsed_files = []
@@ -1966,7 +1972,8 @@ async def start_vtt_translation_job(
             parsed_files.append((filename, parsed))
         async def generate(video_id, options, step, artifacts, workspace):
             return await translate_vtt_batch(
-                parsed_files, target_language, model, summary_processor, workspace, step)
+                parsed_files, target_language, model, summary_processor, workspace, step,
+                allow_fallback=allow_fallback)
         job_id = export_jobs.start(
             "vtt-batch", {"document_title": f"VTT translation - {len(files)} files - {target_language.upper()}"},
             generate,

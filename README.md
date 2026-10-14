@@ -82,21 +82,33 @@ These are the changes specifically described as fixes to the inherited project. 
   chapters and sections; this does not detect slides, run OCR, or regenerate chapters.
 - **Dual OCR Systems**: Run Start Slide OCR first to read detected text with Tesseract. Once that pass completes with readable results and no pending or failed text elements, Process with Surya OCR becomes available as an optional additional pass.
 - **Multi-Source Transcription**: YouTube transcript extraction and Whisper-based speech recognition
-- **Batch VTT Translation (no video required)**: Click **Translate VTT files** in
-  the top toolbar, choose multiple UTF-8 `.vtt` files and a target language
+- **Batch VTT Translation (no video required)**: Open **Extra options** in
+  the top toolbar, then **Translate VTT files**. Choose multiple UTF-8 `.vtt` files and a target language
   (English, German, Arabic or Polish), then choose a translation model and click
   **Translate files**. Uses the same configured providers as transcript translation.
   Download a ZIP containing `<original-name>_<LANG>.vtt` files; duplicate names get
   a numeric suffix. Cue timestamps, identifiers, settings, inline tags, line breaks,
   STYLE/REGION blocks and notes are preserved. Only visible caption text is translated.
-  Inline formatting divides text into translation segments, so heavily marked-up
-  captions can provide less linguistic context than plain cues.
-  Progress shows the current file, translated text segments and elapsed time.
+  Short text fragments share bounded translation groups with protected markers;
+  markers must survive validation before the original cues and formatting are restored.
+  This reduces repeated line-ID/prompt overhead without removing cue boundaries.
+  Progress shows the current file, provider/model, completed batches, retry waits and elapsed time.
+  The ZIP also includes `translation-report.json` with models, grouping counts and
+  provider-reported input/output/total tokens. Missing usage is marked unavailable
+  or partial, never treated as a complete zero-token result.
   Completed ZIPs remain in **Saved translations** after reload; opening the dialog
   reconnects to the last active batch. Invalid files are rejected before translation.
   A failed batch is reported explicitly, not presented as a complete partial ZIP.
   Up to 30 files, 5 MB per file and 20 MB total are supported.
   No video is uploaded and current lecture transcripts/detections are not modified.
+  Translation model choices are shared with transcript translation, including
+  Groq GPT-OSS 120B, GPT-OSS 20B and Llama 3.3 70B, Gemini Flash/Flash-Lite
+  and OpenAI GPT-4.1 mini. Unconfigured or known-unavailable models are disabled.
+  Auto keeps configured Groq as its preferred provider. Groq has request/token
+  limits and uses small sequential batches; Gemini/OpenAI use bounded concurrency.
+  **Allow model fallback** preserves the existing fallback behavior by default.
+  Turn it off and select a model to prohibit switching providers/models.
+  Fallbacks can incur charges under the configured provider's plan.
 - **Caption Video Copies**: Select a transcript or translation from the saved
   versions, then click **Add captions to video** in the Transcript toolbar.
   Its **Transcript for captions** dropdown uses the same saved versions; changing
@@ -390,6 +402,14 @@ type yourself are preserved.
 
 Chapter sections follow topic changes rather than a fixed count. Balanced
 groups related examples, steps and continuations of the same subject.
+Main chapters follow distinct subjects or learning objectives. Brief groups
+broad subjects; Balanced distinguishes topics; Detailed distinguishes finer
+independent learning objectives. There are no minute targets, duration-derived
+chapter quotas, short-chapter duration merges, or forced section limits.
+Unequal chapter lengths are valid; percentages of lecture duration are only
+informational, never a reason to force a split or merge. Long transcript request
+parts carry the current chapter's context so technical boundaries do not imply
+new topics.
 Topic grouping is requested in the initial generation, with no second AI
 review or fixed cap on genuinely distinct topics. This applies when generating
 chapters, not retroactively to saved chapters. Slide-based export sections
