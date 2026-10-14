@@ -30,52 +30,20 @@ export function formatTime(seconds) {
 }
 
 /**
- * Saves a generated file using the browser's location picker when available.
- * Browsers without the File System Access API fall back to their normal download flow.
+ * Sends a generated file through one browser download flow.
+ * Browser download settings control whether to prompt for a location.
  */
 export async function saveBlobToUserLocation(blob, filename, container = document.body) {
-    const picker = window.showSaveFilePicker;
-    if (typeof picker === 'function') {
-        const extension = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
-        const mimeTypes = {
-            zip: 'application/zip',
-            docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            pdf: 'application/pdf',
-            mp4: 'video/mp4',
-        };
-        try {
-            const handle = await picker({
-                suggestedName: filename,
-                types: extension && mimeTypes[extension]
-                    ? [{ description: extension.toUpperCase(), accept: { [mimeTypes[extension]]: [`.${extension}`] } }]
-                    : undefined,
-            });
-            const writable = await handle.createWritable();
-            await writable.write(blob);
-            await writable.close();
-            return;
-        } catch (error) {
-            const isGestureError = (
-                error instanceof DOMException
-                && (error.name === 'NotAllowedError' || error.name === 'SecurityError')
-            ) || (
-                error instanceof Error
-                && /showSaveFilePicker|user gesture/i.test(error.message)
-            );
-            if (!isGestureError) {
-                throw error;
-            }
-            console.warn('Save picker was unavailable outside a user gesture; using browser download.', error);
-        }
-    }
-
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
     link.download = filename;
     link.style.display = 'none';
     container.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    try {
+        link.click();
+    } finally {
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
 }

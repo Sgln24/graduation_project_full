@@ -158,7 +158,7 @@ async function downloadVttBatch() {
         const response = await fetch(job.download_url);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         await saveBlobToUserLocation(await response.blob(), job.filename, element('vttBatchDialog'));
-        status.textContent = 'ZIP sent to your save dialog or browser downloads.';
+        status.textContent = 'ZIP sent to browser downloads.';
     } catch (error) {
         const message = error.name === 'TypeError' && /fetch|network/i.test(error.message)
             ? 'Cannot reach the server. Your saved batch is kept; retry when the app is available.'

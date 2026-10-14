@@ -313,7 +313,7 @@ async function downloadCaptionVideo(job, button, status) {
         const blob = await response.blob();
         const container = Array.from(document.querySelectorAll('dialog:modal')).at(-1) || document.body;
         await saveBlobToUserLocation(blob, job.filename, container);
-        status.textContent = 'Video copy sent to your save dialog or browser downloads.';
+        status.textContent = 'Video copy sent to browser downloads.';
     } catch (error) {
         status.textContent = error.name === 'AbortError' ? 'Save cancelled.' : `Could not download video copy: ${error.message}`;
         if (error.name !== 'AbortError') showError(status.textContent);

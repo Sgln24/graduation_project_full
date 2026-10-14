@@ -109,6 +109,10 @@ These are the changes specifically described as fixes to the inherited project. 
   **Allow model fallback** preserves the existing fallback behavior by default.
   Turn it off and select a model to prohibit switching providers/models.
   Fallbacks can incur charges under the configured provider's plan.
+  Downloads use a single standard browser download flow for ZIPs, videos and
+  chapter documents. Your browser's download settings determine the folder or
+  whether to ask for a save location. The app does not create a separate
+  save-picker placeholder before downloading.
 - **Caption Video Copies**: Select a transcript or translation from the saved
   versions, then click **Add captions to video** in the Transcript toolbar.
   Its **Transcript for captions** dropdown uses the same saved versions; changing
