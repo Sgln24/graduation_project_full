@@ -85,60 +85,6 @@ def output_filename(filename, language, used):
     return name
 
 
-def grouped_vtt_segments(parsed):
-    """Share context and ID overhead across short fragments using protected boundaries."""
-    groups = []
-    current = []
-    size = 0
-    for segment in parsed["segments"]:
-        if current and (len(current) >= 8 or size + len(segment["text"]) > 1200):
-            groups.append(current)
-            current, size = [], 0
-        current.append(segment)
-        size += len(segment["text"])
-    if current:
-        groups.append(current)
-    segments, boundaries = [], []
-    source = "\n".join(segment["text"] for segment in parsed["segments"])
-    number = 0
-    for group in groups:
-        text = group[0]["text"]
-        markers = []
-        for item in group[1:]:
-            while f"[[VTT_{number}]]" in source:
-                number += 1
-            marker = f"[[VTT_{number}]]"
-            number += 1
-            markers.append(marker)
-            text += marker + item["text"]
-        start = group[0]["start"]
-        end = max(item["start"] + item["duration"] for item in group)
-        segments.append({"start": start, "duration": end - start, "text": text})
-        boundaries.append(markers)
-    return segments, boundaries
-
-
-def ungroup_vtt_segments(translated, boundaries):
-    if not isinstance(translated, list) or len(translated) != len(boundaries):
-        raise ValueError("Translation returned an incomplete VTT file.")
-    result = []
-    for item, markers in zip(translated, boundaries):
-        if not isinstance(item, dict) or not isinstance(item.get("text"), str):
-            raise ValueError("Translation returned invalid caption text.")
-        text = item["text"]
-        parts = []
-        for marker in markers:
-            if text.count(marker) != 1:
-                raise ValueError("Translation changed protected VTT boundaries.")
-            value, text = text.split(marker, 1)
-            parts.append(value)
-        parts.append(text)
-        if any(not part.strip() for part in parts):
-            raise ValueError("Translation returned empty caption text.")
-        result.extend({"text": part} for part in parts)
-    return result
-
-
 async def translate_vtt_batch(files, target, model, processor, workspace, step, allow_fallback=True):
     output = Path(workspace) / f"Translated_VTT_{target.upper()}.zip"
     used = set()
@@ -146,18 +92,18 @@ async def translate_vtt_batch(files, target, model, processor, workspace, step, 
     with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         for index, (filename, parsed) in enumerate(files, 1):
             step(f"File {index}/{len(files)}: {filename}")
-            segments, boundaries = grouped_vtt_segments(parsed)
+            segments = parsed["segments"]
             def progress(update):
                 step(f"File {index}/{len(files)}: {filename} - "
                      f"{update.get('message') or 'Translating'}")
             try:
                 result = await processor.translate_transcript(
                     segments, target, model or None, on_progress=progress, allow_fallback=allow_fallback)
-                content = translated_vtt(parsed, ungroup_vtt_segments(result["transcript"], boundaries))
+                content = translated_vtt(parsed, result["transcript"])
                 archive.writestr(output_filename(filename, target, used), content.encode("utf-8"))
                 reports.append({
                     "file": filename, "cue_count": parsed["cues"],
-                    "text_fragments": len(parsed["segments"]), "translation_groups": len(segments),
+                    "text_fragments": len(parsed["segments"]), "translation_items": len(segments),
                     **{key: result.get(key) for key in ("provider", "model", "usage", "elapsed_seconds")},
                 })
             except (RuntimeError, ValueError, KeyError) as error:

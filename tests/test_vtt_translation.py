@@ -17,7 +17,6 @@ from processors.summary_processor import SummaryProcessor
 from vtt_translation import (
     parse_vtt, translated_vtt, translate_vtt_batch, MAX_FILES,
     MAX_FILE_BYTES, MAX_BATCH_BYTES, TRANSLATION_MODELS,
-    grouped_vtt_segments, ungroup_vtt_segments,
 )
 
 
@@ -42,7 +41,7 @@ Second line
 
 
 class VttTranslationTests(unittest.TestCase):
-    def test_zip_survives_model_that_never_preserves_group_markers(self):
+    def test_zip_translates_plain_fragments_without_model_controlled_markers(self):
         processor = SummaryProcessor.__new__(SummaryProcessor)
         processor.model = True
         processor.model_name = "gemini-test"
@@ -66,32 +65,29 @@ class VttTranslationTests(unittest.TestCase):
                 self.assertIn("<v Speaker><b>Hallo &amp; welcome</b></v>\nZweite line", output)
                 self.assertEqual(parse_vtt(output.encode())["cues"], 2)
                 report = json.loads(archive.read("translation-report.json"))[0]
-                self.assertEqual(report["usage"]["requests"], 5)
-        self.assertEqual(len(requests), 5)
+                self.assertEqual(report["usage"]["requests"], 1)
+                self.assertEqual(report["translation_items"], 3)
+        self.assertEqual(len(requests), 1)
+        self.assertTrue(all("[[VTT_" not in item["text"] for item in requests[0]))
 
-    def test_grouping_reduces_ids_without_changing_cues_or_formatting(self):
+    def test_plain_fragment_batches_preserve_cues_and_formatting(self):
         content = b"WEBVTT\n\n" + b"\n\n".join(
             f"cue-{index}\n00:{index // 60:02d}:{index % 60:02d}.000 --> "
             f"00:{(index + 1) // 60:02d}:{(index + 1) % 60:02d}.000\n"
             "<b>Hello</b>\nWorld".encode() for index in range(80)
         )
         parsed = parse_vtt(content)
-        groups, boundaries = grouped_vtt_segments(parsed)
         self.assertEqual(len(parsed["segments"]), 160)
-        self.assertEqual(len(groups), 20, "Eight fragments share each translation item")
         before = SummaryProcessor._translation_batches(parsed["segments"], 30, 2500)
-        after = SummaryProcessor._translation_batches(groups, 30, 2500)
+        after = SummaryProcessor._translation_batches(parsed["segments"], 60, 2500)
         self.assertEqual(len(before), 6)
-        self.assertEqual(len(after), 1, "Short-fragment fixture needs one batch instead of six")
+        self.assertEqual(len(after), 3)
         translated = [{"text": item["text"].replace("Hello", "Hallo").replace("World", "Welt")}
-                      for item in groups]
-        output = translated_vtt(parsed, ungroup_vtt_segments(translated, boundaries))
+                      for item in parsed["segments"]]
+        output = translated_vtt(parsed, translated)
         self.assertEqual(parse_vtt(output.encode())["cues"], 80)
         self.assertEqual(output.count("<b>Hallo</b>\nWelt"), 80)
         self.assertEqual(content.decode().replace("Hello", "Hallo").replace("World", "Welt") + "\n", output)
-        translated[0]["text"] = translated[0]["text"].replace(boundaries[0][0], "")
-        with self.assertRaisesRegex(ValueError, "boundaries"):
-            ungroup_vtt_segments(translated, boundaries)
 
     def test_preserves_metadata_timestamps_markup_and_newlines(self):
         parsed = parse_vtt(b"\xef\xbb\xbf" + VTT.replace(b"\n", b"\r\n"))

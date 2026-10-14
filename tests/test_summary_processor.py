@@ -24,6 +24,8 @@ google_module = ModuleType("google")
 google_genai_module = ModuleType("google.genai")
 google_genai_types_module = ModuleType("google.genai.types")
 google_genai_types_module.GenerateContentConfig = lambda **kwargs: kwargs
+google_genai_types_module.HttpOptions = lambda **kwargs: SimpleNamespace(**kwargs)
+google_genai_types_module.HttpRetryOptions = lambda **kwargs: SimpleNamespace(**kwargs)
 google_genai_module.types = google_genai_types_module
 google_genai_module.Client = object
 google_module.genai = google_genai_module
@@ -112,6 +114,87 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Choose a model"):
             asyncio.run(processor.translate_transcript([], "de", allow_fallback=False))
 
+    def test_quota_overload_and_timeout_switch_once_without_retry_waits(self):
+        for error in (RuntimeError("429 Rate limit: try again in 1m5s"),
+                      RuntimeError("503 UNAVAILABLE high demand"),
+                      asyncio.TimeoutError(),
+                      RuntimeError("Request timed out")):
+            with self.subTest(error=type(error).__name__, message=str(error)):
+                processor = self._gemini_processor(CompleteFakeGeminiModels())
+                processor._provider_chain = lambda *args, **kwargs: [
+                    ("groq", "llama-3.3-70b-versatile"), ("gemini", "gemini-test")]
+                def complete(provider, model, prompt, *args):
+                    if provider == "groq":
+                        raise error
+                    payload = json.loads(prompt.split("\n", 1)[1])
+                    return json.dumps({"translations": [
+                        {"id": item["id"], "text": "Hallo"} for item in payload["lines"]]})
+                processor._complete = mock.Mock(side_effect=complete)
+                with mock.patch("processors.summary_processor.asyncio.sleep", new=mock.AsyncMock()) as sleep:
+                    result = asyncio.run(processor.translate_transcript(
+                        [{"start": 0, "duration": 1, "text": "Hello"}], "de",
+                        "groq:llama-3.3-70b-versatile"))
+                    sleep.assert_not_awaited()
+                self.assertEqual(processor._complete.call_count, 2)
+                self.assertEqual(result["usage"]["requests"], 2)
+                self.assertEqual(result["provider"], "Gemini fallback")
+                if isinstance(error, asyncio.TimeoutError):
+                    self.assertIn("timed out after 30s", result["fallback_reason"])
+
+    def test_explicit_groq_strict_mode_stops_at_first_rate_limit(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._provider_chain = lambda *args, **kwargs: [
+            ("groq", "llama-3.3-70b-versatile"), ("gemini", "gemini-test")]
+        processor._complete = mock.Mock(side_effect=RuntimeError("429 Rate limit reached"))
+        with mock.patch("processors.summary_processor.asyncio.sleep", new=mock.AsyncMock()) as sleep:
+            with self.assertRaisesRegex(RuntimeError, "after 1 attempt.*429"):
+                asyncio.run(processor.translate_transcript(
+                    [{"start": 0, "duration": 1, "text": "Hello"}], "de",
+                    "groq:llama-3.3-70b-versatile", allow_fallback=False))
+            sleep.assert_not_awaited()
+        processor._complete.assert_called_once()
+        self.assertEqual(processor._complete.call_args.args[0], "groq")
+
+    def test_partial_batch_success_survives_failed_missing_line_retry(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._provider_chain = lambda *args, **kwargs: [
+            ("groq", "llama-3.3-70b-versatile"), ("gemini", "gemini-test")]
+        calls = []
+        def complete(provider, model, prompt, *args):
+            payload = json.loads(prompt.split("\n", 1)[1])
+            lines = payload["lines"]
+            calls.append((provider, [item["id"] for item in lines]))
+            if provider == "groq":
+                if len(calls) == 1:
+                    return '{"translations":[{"id":"segment-0","text":"Hallo"}]}'
+                raise RuntimeError("429 Rate limit")
+            return json.dumps({"translations": [{"id": item["id"], "text": "Welt"} for item in lines]})
+        processor._complete = complete
+        result = asyncio.run(processor.translate_transcript([
+            {"start": 0, "duration": 1, "text": "Hello"},
+            {"start": 1, "duration": 1, "text": "World"}], "de",
+            "groq:llama-3.3-70b-versatile"))
+        self.assertEqual(calls, [
+            ("groq", ["segment-0", "segment-1"]),
+            ("groq", ["segment-1"]), ("gemini", ["segment-1"])])
+        self.assertEqual([item["text"] for item in result["transcript"]], ["Hallo", "Welt"])
+        self.assertEqual(result["usage"]["requests"], 3)
+
+    def test_gemini_translation_bounds_sdk_requests_without_changing_chapters(self):
+        models = CompleteFakeGeminiModels()
+        models.generate_content = mock.Mock(wraps=models.generate_content)
+        processor = self._gemini_processor(models)
+        asyncio.run(processor.translate_transcript(
+            [{"start": 0, "duration": 1, "text": "Hello"}], "de", "gemini-test"))
+        config = models.generate_content.call_args.kwargs["config"]
+        options = config["http_options"] if isinstance(config, dict) else config.http_options
+        self.assertEqual(options.timeout, 30000)
+        self.assertEqual(options.retry_options.attempts, 1)
+        processor._complete("gemini", "gemini-test",
+                            'Translate\n{"lines":[{"id":"test","text":"Hello"}]}', 0.2)
+        config = models.generate_content.call_args.kwargs["config"]
+        self.assertFalse(config.get("http_options") if isinstance(config, dict) else config.http_options)
+
     def test_groq_default_and_usage_are_retained_across_provider_fallback(self):
         class Completions:
             def create(self, **kwargs):
@@ -125,9 +208,11 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
                 )
         processor = self._gemini_processor(CompleteFakeGeminiModels())
         processor.groq_client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+        processor.groq_client.with_options = mock.Mock(return_value=processor.groq_client)
         processor.groq_model_name = "openai/gpt-oss-120b"
         transcript = [{"start": 0, "duration": 1, "text": "Hello"}]
         result = asyncio.run(processor.translate_transcript(transcript, "de"))
+        processor.groq_client.with_options.assert_called_once_with(timeout=30, max_retries=0)
         self.assertEqual(result["provider"], "Groq")
         self.assertEqual(result["usage"]["total_tokens"], 100)
         self.assertTrue(result["usage"]["complete"])
@@ -138,40 +223,28 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
         self.assertEqual(fallback["usage"]["models"], ["Gemini gemini-test", "Groq openai/gpt-oss-120b"])
         self.assertFalse(fallback["usage"]["complete"])
 
-    def test_changed_vtt_markers_retry_only_invalid_group(self):
-        class MarkedModels(CompleteFakeGeminiModels):
+    def test_persistent_omissions_retry_only_unresolved_plain_fragment(self):
+        class MissingFragment(CompleteFakeGeminiModels):
             def generate_content(self, **kwargs):
                 response = super().generate_content(**kwargs)
-                if len(self.payloads) == 1:
-                    response.text = response.text.replace("[[VTT_0]]", "[[VTT_9]]")
+                if len(self.payloads) < 3:
+                    result = json.loads(response.text)
+                    result["translations"] = [item for item in result["translations"] if item["id"] != "segment-0"]
+                    response.text = json.dumps(result)
                 return response
-        models = MarkedModels()
-        result = asyncio.run(self._gemini_processor(models).translate_transcript(
-            [{"start": 0, "duration": 2, "text": "Hello[[VTT_0]]World"},
-             {"start": 2, "duration": 1, "text": "Other"}], "de", "gemini-test"))
-        self.assertIn("[[VTT_0]]", result["transcript"][0]["text"])
-        self.assertEqual([item["id"] for item in models.payloads[1]["lines"]], ["segment-0"])
-
-    def test_persistent_marker_failures_use_individual_fragments_without_repeating_successes(self):
-        class BrokenMarkers(CompleteFakeGeminiModels):
-            def generate_content(self, **kwargs):
-                response = super().generate_content(**kwargs)
-                response.text = response.text.replace("[[VTT_0]]", "").replace("[[VTT_1]]", "")
-                return response
-        models = BrokenMarkers()
+        models = MissingFragment()
         progress = []
         result = asyncio.run(self._gemini_processor(models).translate_transcript(
-            [{"start": 0, "duration": 3, "text": "Hello[[VTT_0]]World[[VTT_1]]Again"},
+            [{"start": 0, "duration": 3, "text": "Hello"},
              {"start": 3, "duration": 1, "text": "Other"}], "de", "gemini-test",
             on_progress=progress.append))
-        self.assertEqual(result["transcript"][0]["text"],
-                         "translated: Hello[[VTT_0]]translated: World[[VTT_1]]translated: Again")
+        self.assertEqual(result["transcript"][0]["text"], "translated: Hello")
         self.assertEqual(result["transcript"][1]["text"], "translated: Other")
-        self.assertEqual(len(models.payloads), 5)
+        self.assertEqual(len(models.payloads), 3)
         self.assertEqual([payload["lines"][0]["text"] for payload in models.payloads[2:]],
-                         ["Hello", "World", "Again"])
+                         ["Hello"])
         self.assertTrue(all(len(payload["lines"]) == 1 for payload in models.payloads[2:]))
-        self.assertEqual(result["usage"]["requests"], 5)
+        self.assertEqual(result["usage"]["requests"], 3)
         self.assertTrue(any("separately" in update["message"] for update in progress))
 
     def test_individual_fragment_omissions_remain_explicit_errors(self):
@@ -180,7 +253,7 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
                 return SimpleNamespace(text='{"translations":[]}')
         with self.assertRaisesRegex(RuntimeError, "even when requested individually"):
             asyncio.run(self._gemini_processor(EmptyModels()).translate_transcript(
-                [{"start": 0, "duration": 1, "text": "Hello[[VTT_0]]World"}],
+                [{"start": 0, "duration": 1, "text": "Hello"}],
                 "de", "gemini-test"))
 
     def test_translation_retries_only_missing_ids_and_preserves_fields(self):
@@ -274,6 +347,7 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
         processor.openai_client = SimpleNamespace(
             chat=SimpleNamespace(completions=FakeOpenAICompletions())
         )
+        processor.openai_client.with_options = mock.Mock(return_value=processor.openai_client)
         processor.openai_model_name = "gpt-test"
         processor._refresh_gemini_client = lambda: None
         processor._refresh_openai_client = lambda: None

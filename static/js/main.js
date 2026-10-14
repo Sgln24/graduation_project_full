@@ -499,6 +499,9 @@ function initApp() {
             void updateTranslationModelStatus();
         }
     });
+    bind(elements.translationModel, 'change', () => {
+        document.getElementById('translationFallback').checked = !elements.translationModel.value;
+    });
     bind(elements.intervalExportToggle, 'change', (event) => {
         elements.intervalDuration.disabled = !event.target.checked;
         updateExportAvailability();

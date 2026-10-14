@@ -93,7 +93,8 @@
                     <label><input id="vttBatchFallback" type="checkbox" checked> Allow model fallback</label>
                     <details class="ui-disclosure"><summary>Help</summary><p>Auto prefers configured Groq.
                         Groq has request and token limits. Other providers may incur charges, including fallback calls.
-                        Turn fallback off and choose a model to use only that model.
+                        Choosing a specific model turns fallback off; enable it explicitly to allow switching.
+                        Selections are locked while a batch is running.
                         Timestamps and cue formatting stay unchanged. Results include reported token usage.</p></details>
                     <div class="dialog-actions">
                         <button class="btn btn-secondary" type="submit">Close</button>
@@ -329,7 +330,7 @@
                                 </select>
                                 <small id="translationModelStatus">Checking configured translation models...</small>
                                 <label><input id="translationFallback" type="checkbox" checked> Allow model fallback</label>
-                                <small>Turn off and choose a model to use only that model. Provider limits and charges apply.</small>
+                                <small>Choosing a model turns fallback off. Enable it to permit switching. Provider limits and charges apply.</small>
                                 <button id="translateTranscriptBtn" class="btn btn-secondary btn-action" type="button" disabled>Translate transcript</button>
                             </div>
                             <div class="dialog-actions">

@@ -70,6 +70,8 @@ TRANSLATION_MODELS = {
     "groq:llama-3.3-70b-versatile", "gpt-4.1-mini",
 }
 _COMPLETION_USAGE = ContextVar("completion_usage", default=None)
+TRANSLATION_REQUEST_TIMEOUT = 30
+_TRANSLATION_REQUEST = ContextVar("translation_request", default=False)
 
 
 def translation_usage(requests):
@@ -244,6 +246,11 @@ class SummaryProcessor:
         """
         if provider == "gemini":
             config = {"temperature": temperature}
+            if _TRANSLATION_REQUEST.get():
+                config["http_options"] = types.HttpOptions(
+                    timeout=TRANSLATION_REQUEST_TIMEOUT * 1000,
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                )
             if json_output:
                 config["response_mime_type"] = "application/json"
             if max_tokens:
@@ -272,6 +279,8 @@ class SummaryProcessor:
             self._record_completion_usage(provider, response)
             return response.text
         client = self.groq_client if provider == "groq" else self.openai_client
+        if _TRANSLATION_REQUEST.get():
+            client = client.with_options(timeout=TRANSLATION_REQUEST_TIMEOUT, max_retries=0)
         options = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
@@ -807,7 +816,7 @@ class SummaryProcessor:
         remaining_items = [item for item in translation_items if item["id"] not in done]
 
         batches = (
-            self._translation_batches(remaining_items, 30, 2500)
+            self._translation_batches(remaining_items, 60, 2500)
             if provider == "groq"
             else self._translation_batches(remaining_items)
         )
@@ -815,7 +824,7 @@ class SummaryProcessor:
         # per-minute budget, so send smaller batches one at a time.
         semaphore = asyncio.Semaphore(1 if provider == "groq" else TRANSLATION_CONCURRENCY)
         max_output_tokens = 3000 if provider == "groq" else 8192
-        attempts = 4 if provider == "groq" else 2
+        attempts = 2
         context_lines = 4
         total_segments = len(translation_items)
         model_label = f"{PROVIDER_LABELS[provider]} {selected_model}"
@@ -875,18 +884,13 @@ class SummaryProcessor:
                         ],
                         "context_after": context_after,
                     }
-                    marker_rule = (
-                        "Preserve every [[VTT_n]] marker exactly once, in its original order; these protect "
-                        "caption boundaries, line breaks and formatting. Translate text between markers "
-                        "without moving it across them. "
-                    ) if any("[[VTT_" in item["text"] for item in requested_items) else ""
                     prompt = (
                         f"Translate every item in lines into language code {target_language}. "
                         "Use context_before and context_after only to understand the surrounding "
                         "meaning; do not translate or return those context lines. Preserve terminology "
                         "and fit each translation naturally within its approximate speaking duration. "
                         "Return every line ID exactly once. Never merge or split lines. "
-                        + marker_rule + "Return only a "
+                        "Return only a "
                         "JSON object with a translations array containing objects with exactly these "
                         "fields: id and text.\n"
                         + json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -894,35 +898,43 @@ class SummaryProcessor:
                     raw_result = None
                     last_error = None
                     for attempt in range(attempts):
+                        if abort["error"] is not None:
+                            raise abort["error"]
                         try:
                             request_usage = {"provider": PROVIDER_LABELS[provider], "model": selected_model}
                             requests.append(request_usage)
                             def complete(request_usage=request_usage):
                                 token = _COMPLETION_USAGE.set(request_usage)
+                                translation_token = _TRANSLATION_REQUEST.set(True)
                                 try:
                                     return self._complete(
                                         provider, selected_model, prompt, 0.2, True, max_output_tokens, True,
                                     )
                                 finally:
+                                    _TRANSLATION_REQUEST.reset(translation_token)
                                     _COMPLETION_USAGE.reset(token)
                             raw_result = await asyncio.wait_for(
                                 asyncio.to_thread(complete),
-                                timeout=120,
+                                timeout=TRANSLATION_REQUEST_TIMEOUT + 5,
                             )
                             break
                         except Exception as error:
+                            if isinstance(error, asyncio.TimeoutError):
+                                error = RuntimeError(
+                                    f"Translation request timed out after {TRANSLATION_REQUEST_TIMEOUT}s"
+                                )
                             last_error = error
-                            if self._is_model_unavailable(error):
+                            if self._is_model_unavailable(error) or self._is_quota_error(error) or "timed out" in str(error).lower():
                                 break
                             if attempt < attempts - 1:
-                                delay = self._retry_delay(error) if provider == "groq" else 1
+                                delay = 1
                                 report(f"{model_label}: batch {batch_number} request failed; "
                                        f"retrying in {delay:.1f}s: {str(error)[:180]}")
                                 await asyncio.sleep(delay)
                     if raw_result is None:
                         raise RuntimeError(
                             f"Translation batch {batch_number} {request_label} request failed "
-                            f"after retry: {last_error}"
+                            f"after {attempt + 1} attempt(s): {last_error}"
                         ) from last_error
 
                     try:
@@ -955,31 +967,20 @@ class SummaryProcessor:
                         )
                     expected = {item["id"] for item in requested_items}
                     translations = {
-                        str(item["id"]): str(item["text"]).strip()
+                        str(item["id"]): item["text"].strip()
                         for item in parsed
                         if (
                             isinstance(item, dict)
                             and str(item.get("id", "")) in expected
-                            and str(item.get("text", "")).strip()
+                            and isinstance(item.get("text"), str)
+                            and item["text"].strip()
                         )
                     }
-                    for item in requested_items:
-                        text = translations.get(item["id"])
-                        markers = re.findall(r"\[\[VTT_[0-9]+\]\]", item["text"])
-                        if text is not None and markers:
-                            translated_markers = re.findall(r"\[\[VTT_[0-9]+\]\]", text)
-                            if markers != translated_markers:
-                                translations.pop(item["id"])
-                                continue
-                            source_parts = re.split(r"\[\[VTT_[0-9]+\]\]", item["text"])
-                            result_parts = re.split(r"\[\[VTT_[0-9]+\]\]", text)
-                            if any(source.strip() and not translated.strip()
-                                   for source, translated in zip(source_parts, result_parts)):
-                                translations.pop(item["id"])
                     return translations
 
                 try:
                     translated_by_id = await request_translation(batch, "initial")
+                    done.update(translated_by_id)
                     missing = [
                         item for item in batch
                         if item["id"] not in translated_by_id
@@ -990,30 +991,20 @@ class SummaryProcessor:
                         translated_by_id.update(
                             await request_translation(missing, "missing-segment")
                         )
+                        done.update(translated_by_id)
                     unresolved = [item for item in batch if item["id"] not in translated_by_id]
                     if unresolved:
                         report(f"{model_label}: translating {len(unresolved)} unresolved lines separately "
                                f"in batch {batch_number}")
                     for item in unresolved:
-                        markers = re.findall(r"\[\[VTT_[0-9]+\]\]", item["text"])
-                        fragments = re.split(r"\[\[VTT_[0-9]+\]\]", item["text"])
-                        parts = []
-                        for index, text in enumerate(fragments):
-                            fragment = {
-                                **item, "id": f"{item['id']}-part-{index}", "text": text,
-                                "seconds": round(item["seconds"] / len(fragments), 1),
-                            }
-                            translated_fragment = await request_translation([fragment], "individual-fragment")
-                            if fragment["id"] not in translated_fragment:
-                                raise RuntimeError(
-                                    f"Translation batch {batch_number} omitted a caption fragment "
-                                    "even when requested individually"
-                                )
-                            parts.append(translated_fragment[fragment["id"]])
-                        translated_by_id[item["id"]] = "".join(
-                            text + (markers[index] if index < len(markers) else "")
-                            for index, text in enumerate(parts)
-                        )
+                        translated_fragment = await request_translation([item], "individual-fragment")
+                        if item["id"] not in translated_fragment:
+                            raise RuntimeError(
+                                f"Translation batch {batch_number} omitted a caption fragment "
+                                "even when requested individually"
+                            )
+                        translated_by_id.update(translated_fragment)
+                        done.update(translated_fragment)
                 except Exception as error:
                     if abort["error"] is None:
                         abort["error"] = error
@@ -1040,7 +1031,7 @@ class SummaryProcessor:
                 self._mark_unavailable(provider, selected_model)
             elif self._is_quota_error(error) and "resource_exhausted" in str(error).lower():
                 self._mark_quota_exhausted(provider, selected_model)
-            if len(_chain) < 2 or not (unavailable or self._is_quota_error(error)):
+            if len(_chain) < 2 or not (unavailable or self._is_quota_error(error) or "timed out" in str(error).lower()):
                 raise error
             next_provider, next_model = _chain[1]
             print(

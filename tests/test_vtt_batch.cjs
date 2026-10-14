@@ -21,6 +21,9 @@ ids.translationModel.children = [{value: '', textContent: 'Auto', cloneNode() {r
 ids.vttBatchTarget.value = 'de';
 const requests = [], errors = [], timers = [], downloads = [], storage = new Map();
 let jobFails = false, historyFails = false, downloadingFails = false;
+let holdStatus = false, releaseStatus;
+const lockedControls = ['translateVttBatchBtn', 'vttBatchFiles', 'vttBatchTarget',
+    'vttBatchModel', 'vttBatchFallback'];
 let modelsRefreshed = 0;
 const job = {id: 'batch', status: 'complete', elapsed: 10, title: 'VTT translation - 2 files - DE',
     filename: 'Translated_VTT_DE.zip', created_at: 100, download_url: '/download',
@@ -42,8 +45,11 @@ const context = vm.createContext({
     fetch: async (url, options) => {
         requests.push({url, options});
         if (url === '/vtt_translation_jobs') return {ok: true, json: async () => ({job_id: 'batch'})};
-        if (url === '/export_jobs/batch/status') return {ok: true, json: async () =>
-            jobFails ? {status: 'error', error: 'Provider unavailable', elapsed: 5} : job};
+        if (url === '/export_jobs/batch/status') return {ok: true, json: async () => {
+            for (const id of lockedControls) assert.equal(ids[id].disabled, true, `${id} locked during a job`);
+            if (holdStatus) await new Promise(resolve => { releaseStatus = resolve; });
+            return jobFails ? {status: 'error', error: 'Provider unavailable', elapsed: 5} : job;
+        }};
         if (url === '/saved_exports/vtt-batch') {
             if (historyFails) throw new Error('Connection lost');
             return {ok: true, json: async () => ({exports: [job]})};
@@ -99,13 +105,34 @@ vm.runInContext(source, context);
     assert.equal(requests.length, requestCount);
     assert.match(errors.at(-1), /Choose a model/);
     ids.vttBatchModel.value = 'groq:openai/gpt-oss-20b';
+    ids.vttBatchFallback.checked = true;
+    ids.vttBatchModel.listeners.change();
+    assert.equal(ids.vttBatchFallback.checked, false, 'Choosing Groq defaults to strict mode');
     await context.translateVttFiles();
     assert.equal(requests.filter(item => item.url === '/vtt_translation_jobs').at(-1).options.body.get('allow_fallback'), 'false');
+    for (const id of lockedControls) assert.equal(ids[id].disabled, false, `${id} unlocked after completion`);
+    holdStatus = true;
+    const pendingTranslation = context.translateVttFiles();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const selectedOptions = ids.vttBatchModel.children;
+    await ids.openVttBatchBtn.listeners.click();
+    assert.equal(ids.vttBatchModel.children, selectedOptions, 'Reopening leaves active model selection intact');
+    for (const id of lockedControls) assert.equal(ids[id].disabled, true);
+    await context.translateVttFiles();
+    releaseStatus();
+    holdStatus = false;
+    await pendingTranslation;
+    for (const id of lockedControls) assert.equal(ids[id].disabled, false);
+    ids.vttBatchModel.value = '';
+    ids.vttBatchModel.listeners.change();
+    assert.equal(ids.vttBatchFallback.checked, true, 'Auto re-enables fallback');
+    ids.vttBatchModel.value = 'groq:openai/gpt-oss-20b';
     ids.vttBatchFallback.checked = true;
     jobFails = true;
     await context.translateVttFiles();
     assert.match(errors.at(-1), /Provider unavailable/);
     assert.equal(ids.translateVttBatchBtn.disabled, false);
+    for (const id of lockedControls) assert.equal(ids[id].disabled, false, `${id} unlocked after failure`);
     assert.equal(storage.has('activeVttBatchJob'), false);
     assert.equal(timers.filter(timer => timer.running && !timer.stopped).length, 0, 'Error stops live clocks');
     jobFails = false;

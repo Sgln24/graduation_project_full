@@ -89,15 +89,16 @@ These are the changes specifically described as fixes to the inherited project. 
   Download a ZIP containing `<original-name>_<LANG>.vtt` files; duplicate names get
   a numeric suffix. Cue timestamps, identifiers, settings, inline tags, line breaks,
   STYLE/REGION blocks and notes are preserved. Only visible caption text is translated.
-  Short text fragments share bounded translation groups with protected markers;
-  markers must survive validation before the original cues and formatting are restored.
-  If a model repeatedly omits lines or changes group markers, only those unresolved
-  groups are translated as individual fragments and reassembled locally; successful
-  translations are kept. Failure to translate an individual fragment remains an
-  explicit error rather than silently dropping captions.
-  This reduces repeated line-ID/prompt overhead without removing cue boundaries.
+  Visible text fragments are translated in bounded batches without synthetic markers.
+  Cue boundaries and formatting remain local, so the model cannot alter them.
+  Short Groq fragments are packed up to 60 items within the existing character budget.
+  Only missing translations are retried; successful translations are kept.
+  Translation requests have a 30-second SDK timeout and no hidden SDK retries.
+  Quota, overload and timeout errors switch to the next configured model promptly
+  when fallback is enabled, or report an error when it is disabled. No repeated
+  minute-long quota waits. Provider limits can still prevent a translation.
   Progress shows the current file, provider/model, completed batches, retry waits and elapsed time.
-  The ZIP also includes `translation-report.json` with models, grouping counts and
+  The ZIP also includes `translation-report.json` with models, fragment/item counts and
   provider-reported input/output/total tokens. Missing usage is marked unavailable
   or partial, never treated as a complete zero-token result.
   Completed ZIPs remain in **Saved translations** after reload; opening the dialog
@@ -110,8 +111,9 @@ These are the changes specifically described as fixes to the inherited project. 
   and OpenAI GPT-4.1 mini. Unconfigured or known-unavailable models are disabled.
   Auto keeps configured Groq as its preferred provider. Groq has request/token
   limits and uses small sequential batches; Gemini/OpenAI use bounded concurrency.
-  **Allow model fallback** preserves the existing fallback behavior by default.
-  Turn it off and select a model to prohibit switching providers/models.
+  **Allow model fallback** is enabled for Auto. Choosing a specific model turns
+  it off; explicitly enable it to permit switching providers/models.
+  Batch file/language/model settings are locked while the batch runs.
   Fallbacks can incur charges under the configured provider's plan.
   Downloads use a single standard browser download flow for ZIPs, videos and
   chapter documents. Your browser's download settings determine the folder or
