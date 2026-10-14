@@ -199,6 +199,76 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
             sleep.assert_awaited_once_with(6.3325)
         self.assertEqual(processor._complete.call_count, 2)
 
+    def test_invalid_json_splits_requests_and_preserves_caption_fields(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._provider_chain = lambda *args, **kwargs: [("groq", "openai/gpt-oss-20b")]
+        calls = []
+        def complete(provider, model, prompt, *args):
+            lines = json.loads(prompt.split("\n", 1)[1])["lines"]
+            calls.append([item["id"] for item in lines])
+            if len(lines) > 2:
+                return '{"translations":[{"id":'
+            return "```json\n" + json.dumps({"translations": [
+                {"id": item["id"], "text": "Translated " + item["text"]} for item in lines]}) + "\n```"
+        processor._complete = complete
+        transcript = [{"start": index, "duration": 1, "text": f"Line {index}", "speaker": "A"}
+                      for index in range(8)]
+        progress = []
+        result = asyncio.run(processor.translate_transcript(
+            transcript, "de", "groq:openai/gpt-oss-20b",
+            allow_fallback=False, on_progress=progress.append))
+        self.assertEqual([len(call) for call in calls], [8, 4, 2, 2, 4, 2, 2])
+        self.assertEqual(result["usage"]["requests"], 7)
+        self.assertEqual(len(result["transcript"]), 8)
+        for original, translated in zip(transcript, result["transcript"]):
+            self.assertEqual(translated, {**original, "text": "Translated " + original["text"]})
+        self.assertTrue(any("two smaller requests" in update["message"] for update in progress))
+
+    def test_persistent_invalid_json_recovery_is_bounded(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._complete = mock.Mock(return_value='{"translations":[')
+        with self.assertRaisesRegex(ValueError, "invalid JSON after bounded recovery"):
+            asyncio.run(processor.translate_transcript(
+                [{"start": index, "duration": 1, "text": f"Line {index}"} for index in range(8)],
+                "de", "gemini-test", allow_fallback=False))
+        self.assertEqual(processor._complete.call_count, 3)
+
+    def test_invalid_response_shape_recovers_in_smaller_requests(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._complete = mock.Mock(side_effect=[
+            '{"translations":null}',
+            '{"translations":[{"id":"segment-0","text":"Hallo"}]}',
+            '{"translations":[{"id":"segment-1","text":"Welt"}]}',
+        ])
+        result = asyncio.run(processor.translate_transcript([
+            {"start": 0, "duration": 1, "text": "Hello"},
+            {"start": 1, "duration": 1, "text": "World"}], "de", "gemini-test",
+            allow_fallback=False))
+        self.assertEqual([item["text"] for item in result["transcript"]], ["Hallo", "Welt"])
+        self.assertEqual(result["usage"]["requests"], 3)
+
+    def test_successful_split_is_kept_when_next_split_hits_quota(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._provider_chain = lambda *args, **kwargs: [
+            ("groq", "openai/gpt-oss-20b"), ("gemini", "gemini-test")]
+        calls = []
+        def complete(provider, model, prompt, *args):
+            lines = json.loads(prompt.split("\n", 1)[1])["lines"]
+            calls.append((provider, [item["id"] for item in lines]))
+            if provider == "groq":
+                if len(lines) > 1:
+                    return "malformed"
+                if lines[0]["id"] == "segment-1":
+                    raise RuntimeError("429 rate limit")
+            return json.dumps({"translations": [
+                {"id": item["id"], "text": "Translated " + item["text"]} for item in lines]})
+        processor._complete = complete
+        result = asyncio.run(processor.translate_transcript([
+            {"start": 0, "duration": 1, "text": "Hello"},
+            {"start": 1, "duration": 1, "text": "World"}], "de", "groq:openai/gpt-oss-20b"))
+        self.assertEqual(calls[-1], ("gemini", ["segment-1"]))
+        self.assertEqual(len(result["transcript"]), 2)
+
     def test_short_wait_policy_rejects_long_unknown_and_daily_quota_errors(self):
         for message in (
             "429 tokens per minute: try again in 1m5s",

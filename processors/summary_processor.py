@@ -870,8 +870,30 @@ class SummaryProcessor:
                 ]
 
                 async def request_translation(
-                    requested_items, request_label, retry_invalid_response=True
+                    requested_items, request_label, retry_invalid_response=True, split_depth=0
                 ):
+                    async def recover_response(reason):
+                        if len(requested_items) > 1 and split_depth < 2:
+                            midpoint = (len(requested_items) + 1) // 2
+                            report(
+                                f"{model_label}: batch {batch_number} {reason}; "
+                                "retrying as two smaller requests on the same model"
+                            )
+                            recovered = {}
+                            for part in (requested_items[:midpoint], requested_items[midpoint:]):
+                                recovered.update(await request_translation(
+                                    part, f"{request_label}-split", False, split_depth + 1,
+                                ))
+                                done.update(recovered)
+                            return recovered
+                        if retry_invalid_response:
+                            report(f"{model_label}: batch {batch_number} {reason}; retrying once in 1s")
+                            await asyncio.sleep(1)
+                            return await request_translation(
+                                requested_items, f"{request_label}-response-retry", False, split_depth,
+                            )
+                        raise ValueError(f"Translation batch {batch_number} {reason} after bounded recovery")
+
                     payload = {
                         "context_before": context_before,
                         "lines": [
@@ -949,33 +971,16 @@ class SummaryProcessor:
                         ) from last_error
 
                     try:
-                        parsed = json.loads(raw_result)
-                    except (TypeError, json.JSONDecodeError) as error:
-                        if retry_invalid_response:
-                            report(f"{model_label}: batch {batch_number} returned invalid JSON; retrying in 1s")
-                            await asyncio.sleep(1)
-                            return await request_translation(
-                                requested_items,
-                                f"{request_label}-response-retry",
-                                False,
-                            )
-                        raise ValueError(
-                            f"Translation batch {batch_number} returned invalid JSON"
-                        ) from error
+                        parsed = json.loads(
+                            re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_result.strip()).strip()
+                            if isinstance(raw_result, str) else raw_result
+                        )
+                    except (TypeError, json.JSONDecodeError):
+                        return await recover_response("returned invalid JSON")
                     if isinstance(parsed, dict):
                         parsed = parsed.get("translations")
                     if not isinstance(parsed, list):
-                        if retry_invalid_response:
-                            report(f"{model_label}: batch {batch_number} returned an invalid response; retrying in 1s")
-                            await asyncio.sleep(1)
-                            return await request_translation(
-                                requested_items,
-                                f"{request_label}-response-retry",
-                                False,
-                            )
-                        raise ValueError(
-                            f"Translation batch {batch_number} returned an invalid response"
-                        )
+                        return await recover_response("returned an invalid response")
                     expected = {item["id"] for item in requested_items}
                     translations = {
                         str(item["id"]): item["text"].strip()

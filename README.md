@@ -93,6 +93,9 @@ These are the changes specifically described as fixes to the inherited project. 
   Cue boundaries and formatting remain local, so the model cannot alter them.
   Short Groq fragments are packed up to 60 items within the existing character budget.
   Only missing translations are retried; successful translations are kept.
+  Markdown JSON fences are accepted. Malformed JSON or invalid response shapes
+  trigger smaller requests on the same model (at most two split levels), preserving
+  successful sub-batches. Persistent malformed output remains an explicit error.
   Translation requests have a 30-second SDK timeout and no hidden SDK retries.
   Short Groq rate-limit waits (at most 15 seconds including a safety margin) get
   one retry of the same request on the same model, including with fallback disabled.
