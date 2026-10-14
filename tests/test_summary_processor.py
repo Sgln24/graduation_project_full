@@ -163,6 +163,56 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
         processor._complete.assert_called_once()
         self.assertEqual(processor._complete.call_args.args[0], "groq")
 
+    def test_short_groq_token_wait_retries_missing_lines_on_same_model(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._provider_chain = lambda *args, **kwargs: [
+            ("groq", "openai/gpt-oss-20b"), ("gemini", "gemini-test")]
+        processor._complete = mock.Mock(side_effect=[
+            '{"translations":[{"id":"segment-0","text":"Hallo"}]}',
+            RuntimeError("429 tokens per minute (TPM): Please try again in 5.3325s. rate_limit_exceeded"),
+            '{"translations":[{"id":"segment-1","text":"Welt"}]}',
+        ])
+        progress = []
+        with mock.patch("processors.summary_processor.asyncio.sleep", new=mock.AsyncMock()) as sleep:
+            result = asyncio.run(processor.translate_transcript([
+                {"start": 0, "duration": 1, "text": "Hello"},
+                {"start": 1, "duration": 1, "text": "World"}], "de",
+                "groq:openai/gpt-oss-20b", allow_fallback=False, on_progress=progress.append))
+            sleep.assert_awaited_once_with(6.3325)
+        calls = processor._complete.call_args_list
+        self.assertTrue(all(call.args[:2] == ("groq", "openai/gpt-oss-20b") for call in calls))
+        self.assertEqual(calls[1].args[2], calls[2].args[2], "Retry the exact missing-line request")
+        self.assertEqual([item["text"] for item in result["transcript"]], ["Hallo", "Welt"])
+        self.assertEqual(result["usage"]["requests"], 3)
+        self.assertTrue(any("once in 6.3s" in update["message"] for update in progress))
+
+    def test_short_groq_rate_limit_is_retried_only_once(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._provider_chain = lambda *args, **kwargs: [("groq", "openai/gpt-oss-20b")]
+        processor._complete = mock.Mock(side_effect=RuntimeError(
+            "429 tokens per minute: Please try again in 5.3325s. rate_limit_exceeded"))
+        with mock.patch("processors.summary_processor.asyncio.sleep", new=mock.AsyncMock()) as sleep:
+            with self.assertRaisesRegex(RuntimeError, "after 2 attempt.*429"):
+                asyncio.run(processor.translate_transcript(
+                    [{"start": 0, "duration": 1, "text": "Hello"}], "de",
+                    "groq:openai/gpt-oss-20b", allow_fallback=False))
+            sleep.assert_awaited_once_with(6.3325)
+        self.assertEqual(processor._complete.call_count, 2)
+
+    def test_short_wait_policy_rejects_long_unknown_and_daily_quota_errors(self):
+        for message in (
+            "429 tokens per minute: try again in 1m5s",
+            "429 tokens per minute: try again in 14.1s",
+            "429 tokens per minute: try again in 65s",
+            "429 tokens per minute: no retry time provided",
+            "429 daily quota: try again in 5s",
+            "503 UNAVAILABLE: try again in 5s",
+        ):
+            with self.subTest(message=message):
+                self.assertIsNone(SummaryProcessor._short_translation_retry_delay(RuntimeError(message)))
+        self.assertEqual(SummaryProcessor._short_translation_retry_delay(
+            RuntimeError("429 rate_limit_exceeded: try again in 14s")), 15)
+
     def test_partial_batch_success_survives_failed_missing_line_retry(self):
         processor = self._gemini_processor(CompleteFakeGeminiModels())
         processor._provider_chain = lambda *args, **kwargs: [

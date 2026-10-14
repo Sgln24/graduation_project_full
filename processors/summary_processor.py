@@ -924,6 +924,17 @@ class SummaryProcessor:
                                     f"Translation request timed out after {TRANSLATION_REQUEST_TIMEOUT}s"
                                 )
                             last_error = error
+                            rate_limit_delay = (
+                                self._short_translation_retry_delay(error)
+                                if provider == "groq" and attempt < attempts - 1 else None
+                            )
+                            if rate_limit_delay is not None:
+                                report(
+                                    f"{model_label}: batch {batch_number} hit a temporary token limit; "
+                                    f"retrying the same {request_label} request once in {rate_limit_delay:.1f}s"
+                                )
+                                await asyncio.sleep(rate_limit_delay)
+                                continue
                             if self._is_model_unavailable(error) or self._is_quota_error(error) or "timed out" in str(error).lower():
                                 break
                             if attempt < attempts - 1:
@@ -1093,6 +1104,18 @@ class SummaryProcessor:
         if current:
             batches.append(current)
         return batches
+
+    @staticmethod
+    def _short_translation_retry_delay(error: Exception):
+        text = str(error).lower()
+        if (
+            "429" not in text
+            or not any(marker in text for marker in ("tokens per minute", "rate_limit_exceeded"))
+            or not re.search(r"try again in\s+(?:(\d+)m)?([\d.]+)(ms|s)", text)
+        ):
+            return None
+        delay = SummaryProcessor._retry_delay(error)
+        return delay if delay <= 15 else None
 
     @staticmethod
     def _retry_delay(error: Exception) -> float:

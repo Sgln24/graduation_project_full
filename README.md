@@ -94,7 +94,9 @@ These are the changes specifically described as fixes to the inherited project. 
   Short Groq fragments are packed up to 60 items within the existing character budget.
   Only missing translations are retried; successful translations are kept.
   Translation requests have a 30-second SDK timeout and no hidden SDK retries.
-  Quota, overload and timeout errors switch to the next configured model promptly
+  Short Groq rate-limit waits (at most 15 seconds including a safety margin) get
+  one retry of the same request on the same model, including with fallback disabled.
+  Longer quota waits, overload and timeout errors switch to the next configured model promptly
   when fallback is enabled, or report an error when it is disabled. No repeated
   minute-long quota waits. Provider limits can still prevent a translation.
   Progress shows the current file, provider/model, completed batches, retry waits and elapsed time.
