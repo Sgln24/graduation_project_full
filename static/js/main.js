@@ -13,6 +13,7 @@ import { elements } from './elements.js';
 import { initInteractiveLayer } from './interactive-layer.js';
 import { initTranscriptVersions } from './transcript-versions.js';
 import { initCaptionExport } from './caption-export.js';
+import { initVttBatch } from './vtt-batch.js';
 import { openOptionsDialog } from './utils.js';
 
 // Global state
@@ -307,6 +308,7 @@ function initApp() {
         ['summaryOptionsBtn', 'summaryOptionsPanel'],
         ['transcriptOptionsBtn', 'transcriptOptionsDialog'],
         ['openCaptionStyleBtn', 'captionStyleDialog'],
+        ['openVttBatchBtn', 'vttBatchDialog'],
         ['downloadTranscriptBtn', 'transcriptDownloadDialog'],
         ['exportChaptersBtn', 'exportOptionsDialog'],
         ['detectScenesBtn', 'sceneDetectionOptionsDialog'],
@@ -472,6 +474,7 @@ function initApp() {
     document.addEventListener('transcriptUpdated', () => void refreshSavedExports());
     initTranscriptVersions();
     initCaptionExport();
+    initVttBatch();
     document.addEventListener('chaptersUpdated', () => void refreshSavedExports());
     bind(document.getElementById('refreshSavedExportsBtn'), 'click', refreshSavedExports);
     bind(elements.regenerateTranscriptBtn, 'click', () => regenerateTranscript());

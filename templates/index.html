@@ -62,6 +62,37 @@
                     onclick="document.getElementById('videoFile').click()">
                 <i class="fas fa-upload"></i> Upload Video
             </button>
+            <button id="openVttBatchBtn" class="btn btn-secondary btn-options" type="button">Translate VTT files</button>
+            <dialog id="vttBatchDialog" class="options-dialog" aria-labelledby="vttBatchHeading">
+                <form method="dialog">
+                    <div class="dialog-header">
+                        <h2 id="vttBatchHeading">Translate VTT files</h2>
+                        <button class="dialog-close" type="submit" aria-label="Close VTT translation">&times;</button>
+                    </div>
+                    <label for="vttBatchFiles">Subtitle files</label>
+                    <input id="vttBatchFiles" type="file" accept=".vtt,text/vtt" multiple>
+                    <small style="display: block;">No video needed. Up to 30 files, 5 MB each, 20 MB total.</small>
+                    <label for="vttBatchTarget">Translate to</label>
+                    <select id="vttBatchTarget">
+                        <option value="en">English</option>
+                        <option value="de">German</option>
+                        <option value="ar">Arabic</option>
+                        <option value="pl">Polish</option>
+                    </select>
+                    <label for="vttBatchModel">Translation model</label>
+                    <select id="vttBatchModel"></select>
+                    <small>Uses your configured translation provider. Timestamps and cue formatting stay unchanged.</small>
+                    <div class="dialog-actions">
+                        <button class="btn btn-secondary" type="submit">Close</button>
+                        <button id="translateVttBatchBtn" class="btn btn-primary" type="button">Translate files</button>
+                    </div>
+                    <div id="vttBatchProgress" role="status" aria-live="polite"></div>
+                    <label for="vttBatchSaved">Saved translations</label>
+                    <select id="vttBatchSaved"><option value="">Choose a completed batch</option></select>
+                    <button id="downloadVttBatchBtn" class="btn btn-secondary btn-action" type="button" disabled>Download ZIP</button>
+                    <small id="vttBatchHistoryStatus" role="status" aria-live="polite"></small>
+                </form>
+            </dialog>
             <button id="settingsBtn" class="btn btn-secondary btn-options" type="button" aria-label="Settings" title="Settings">
                 <i class="fas fa-cog"></i> Settings
             </button>

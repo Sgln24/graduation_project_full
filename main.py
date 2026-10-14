@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, UploadFile, File, APIRouter
+from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, UploadFile, File, Form, APIRouter
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -40,6 +40,7 @@ from export_jobs import ExportJobStore, export_workspace, cleanup_export_workspa
 from starlette.background import BackgroundTask
 from ffmpeg_tools import media_executable
 from caption_exports import validate_captions, render_captioned_video, video_duration, caption_text, caption_filename, validate_caption_style, render_caption_preview, render_selectable_captions
+from vtt_translation import parse_vtt, translate_vtt_batch, MAX_FILE_BYTES, MAX_BATCH_BYTES, MAX_FILES, TRANSLATION_MODELS
 
 from project_paths import STATIC_DIR, VIDEO_DIR, TRANSCRIPTS_DIR, SCENES_DIR, THUMBNAILS_DIR, FULLSIZE_IMAGES_DIR, SUMMARIES_DIR, EXPORTS_DIR, DETECTIONS_DIR, OCR_RESULTS_DIR, ensure_app_directories
 
@@ -1935,6 +1936,45 @@ def collapse_word_heading(paragraph):
     paragraph_properties.append(OxmlElement("w:collapsed"))
 
 export_jobs = ExportJobStore(EXPORTS_DIR / "jobs")
+
+
+@app.post("/vtt_translation_jobs")
+async def start_vtt_translation_job(
+    files: list[UploadFile] = File(...), target_language: str = Form(...), model: str = Form(""),
+):
+    try:
+        if target_language not in {"en", "de", "ar", "pl"}:
+            raise HTTPException(status_code=400, detail="Unsupported translation language")
+        if model not in TRANSLATION_MODELS:
+            raise HTTPException(status_code=400, detail="Unsupported translation model")
+        if not 1 <= len(files) <= MAX_FILES:
+            raise HTTPException(status_code=400, detail=f"Choose between 1 and {MAX_FILES} VTT files")
+        parsed_files = []
+        total = 0
+        for file in files:
+            filename = file.filename or ""
+            if not filename.lower().endswith(".vtt"):
+                raise HTTPException(status_code=400, detail="Only .vtt files are supported")
+            content = await file.read(MAX_FILE_BYTES + 1)
+            total += len(content)
+            if len(content) > MAX_FILE_BYTES or total > MAX_BATCH_BYTES:
+                raise HTTPException(status_code=413, detail="Limit: 5 MB per file and 20 MB per batch")
+            try:
+                parsed = parse_vtt(content)
+            except (UnicodeDecodeError, ValueError) as error:
+                raise HTTPException(status_code=400, detail=f"{filename}: {error}") from error
+            parsed_files.append((filename, parsed))
+        async def generate(video_id, options, step, artifacts, workspace):
+            return await translate_vtt_batch(
+                parsed_files, target_language, model, summary_processor, workspace, step)
+        job_id = export_jobs.start(
+            "vtt-batch", {"document_title": f"VTT translation - {len(files)} files - {target_language.upper()}"},
+            generate,
+        )
+        return {"job_id": job_id, "status_url": f"/export_jobs/{job_id}/status"}
+    finally:
+        for file in files:
+            await file.close()
 
 
 @app.post("/caption_file/{video_id}/{format}")

@@ -82,6 +82,21 @@ These are the changes specifically described as fixes to the inherited project. 
   chapters and sections; this does not detect slides, run OCR, or regenerate chapters.
 - **Dual OCR Systems**: Run Start Slide OCR first to read detected text with Tesseract. Once that pass completes with readable results and no pending or failed text elements, Process with Surya OCR becomes available as an optional additional pass.
 - **Multi-Source Transcription**: YouTube transcript extraction and Whisper-based speech recognition
+- **Batch VTT Translation (no video required)**: Click **Translate VTT files** in
+  the top toolbar, choose multiple UTF-8 `.vtt` files and a target language
+  (English, German, Arabic or Polish), then choose a translation model and click
+  **Translate files**. Uses the same configured providers as transcript translation.
+  Download a ZIP containing `<original-name>_<LANG>.vtt` files; duplicate names get
+  a numeric suffix. Cue timestamps, identifiers, settings, inline tags, line breaks,
+  STYLE/REGION blocks and notes are preserved. Only visible caption text is translated.
+  Inline formatting divides text into translation segments, so heavily marked-up
+  captions can provide less linguistic context than plain cues.
+  Progress shows the current file, translated text segments and elapsed time.
+  Completed ZIPs remain in **Saved translations** after reload; opening the dialog
+  reconnects to the last active batch. Invalid files are rejected before translation.
+  A failed batch is reported explicitly, not presented as a complete partial ZIP.
+  Up to 30 files, 5 MB per file and 20 MB total are supported.
+  No video is uploaded and current lecture transcripts/detections are not modified.
 - **Caption Video Copies**: Select a transcript or translation from the saved
   versions, then click **Add captions to video** in the Transcript toolbar.
   Its **Transcript for captions** dropdown uses the same saved versions; changing
