@@ -67,7 +67,7 @@ TRANSLATION_CONCURRENCY = max(1, int(os.getenv("TRANSLATION_CONCURRENCY", "4")))
 TRANSLATION_MODELS = {
     "", *GEMINI_FALLBACK_MODELS, "gemini-2.5-flash", "gemini-2.5-flash-lite",
     "groq:openai/gpt-oss-120b", "groq:openai/gpt-oss-20b",
-    "groq:llama-3.3-70b-versatile", "gpt-4.1-mini",
+    "gpt-4.1-mini",
 }
 _COMPLETION_USAGE = ContextVar("completion_usage", default=None)
 TRANSLATION_REQUEST_TIMEOUT = 30

@@ -69,6 +69,14 @@ class CompleteFakeGeminiModels:
 
 
 class SummaryProcessorTranslationTests(unittest.TestCase):
+    def test_translation_catalog_excludes_unavailable_groq_llama(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor.groq_client = object()
+        options = {item["id"]: item["available"] for item in processor.translation_models()}
+        self.assertNotIn("groq:llama-3.3-70b-versatile", options)
+        self.assertTrue(options["groq:openai/gpt-oss-20b"])
+        self.assertTrue(options["groq:openai/gpt-oss-120b"])
+
     def _gemini_processor(self, models):
         processor = SummaryProcessor.__new__(SummaryProcessor)
         processor.client = SimpleNamespace(models=models)

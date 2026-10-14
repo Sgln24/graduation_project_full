@@ -566,12 +566,13 @@ export async function updateTranslationModelStatus() {
             }
             elements.translationModel.value = selected;
             if (elements.translationModel.selectedIndex < 0) elements.translationModel.value = '';
+        } else {
+            [...elements.translationModel.options].forEach((option) => {
+                if (option.value.startsWith('gemini-')) option.disabled = !data.gemini_configured;
+                if (option.value.startsWith('groq:')) option.disabled = !data.groq_configured;
+                if (option.value.startsWith('gpt-')) option.disabled = !data.openai_configured;
+            });
         }
-        [...elements.translationModel.options].forEach((option) => {
-            if (option.value.startsWith('gemini-')) option.disabled = !data.gemini_configured;
-            if (option.value.startsWith('groq:')) option.disabled = !data.groq_configured;
-            if (option.value.startsWith('gpt-')) option.disabled = !data.openai_configured;
-        });
         if (elements.translationModel.selectedOptions[0]?.disabled) {
             elements.translationModel.value = '';
         }

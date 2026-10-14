@@ -107,7 +107,7 @@ These are the changes specifically described as fixes to the inherited project. 
   Up to 30 files, 5 MB per file and 20 MB total are supported.
   No video is uploaded and current lecture transcripts/detections are not modified.
   Translation model choices are shared with transcript translation, including
-  Groq GPT-OSS 120B, GPT-OSS 20B and Llama 3.3 70B, Gemini Flash/Flash-Lite
+  Groq GPT-OSS 120B and GPT-OSS 20B, Gemini Flash/Flash-Lite
   and OpenAI GPT-4.1 mini. Unconfigured or known-unavailable models are disabled.
   Auto keeps configured Groq as its preferred provider. Groq has request/token
   limits and uses small sequential batches; Gemini/OpenAI use bounded concurrency.
