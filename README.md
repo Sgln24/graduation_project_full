@@ -91,6 +91,10 @@ These are the changes specifically described as fixes to the inherited project. 
   STYLE/REGION blocks and notes are preserved. Only visible caption text is translated.
   Short text fragments share bounded translation groups with protected markers;
   markers must survive validation before the original cues and formatting are restored.
+  If a model repeatedly omits lines or changes group markers, only those unresolved
+  groups are translated as individual fragments and reassembled locally; successful
+  translations are kept. Failure to translate an individual fragment remains an
+  explicit error rather than silently dropping captions.
   This reduces repeated line-ID/prompt overhead without removing cue boundaries.
   Progress shows the current file, provider/model, completed batches, retry waits and elapsed time.
   The ZIP also includes `translation-report.json` with models, grouping counts and

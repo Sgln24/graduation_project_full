@@ -152,6 +152,37 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
         self.assertIn("[[VTT_0]]", result["transcript"][0]["text"])
         self.assertEqual([item["id"] for item in models.payloads[1]["lines"]], ["segment-0"])
 
+    def test_persistent_marker_failures_use_individual_fragments_without_repeating_successes(self):
+        class BrokenMarkers(CompleteFakeGeminiModels):
+            def generate_content(self, **kwargs):
+                response = super().generate_content(**kwargs)
+                response.text = response.text.replace("[[VTT_0]]", "").replace("[[VTT_1]]", "")
+                return response
+        models = BrokenMarkers()
+        progress = []
+        result = asyncio.run(self._gemini_processor(models).translate_transcript(
+            [{"start": 0, "duration": 3, "text": "Hello[[VTT_0]]World[[VTT_1]]Again"},
+             {"start": 3, "duration": 1, "text": "Other"}], "de", "gemini-test",
+            on_progress=progress.append))
+        self.assertEqual(result["transcript"][0]["text"],
+                         "translated: Hello[[VTT_0]]translated: World[[VTT_1]]translated: Again")
+        self.assertEqual(result["transcript"][1]["text"], "translated: Other")
+        self.assertEqual(len(models.payloads), 5)
+        self.assertEqual([payload["lines"][0]["text"] for payload in models.payloads[2:]],
+                         ["Hello", "World", "Again"])
+        self.assertTrue(all(len(payload["lines"]) == 1 for payload in models.payloads[2:]))
+        self.assertEqual(result["usage"]["requests"], 5)
+        self.assertTrue(any("separately" in update["message"] for update in progress))
+
+    def test_individual_fragment_omissions_remain_explicit_errors(self):
+        class EmptyModels:
+            def generate_content(self, **kwargs):
+                return SimpleNamespace(text='{"translations":[]}')
+        with self.assertRaisesRegex(RuntimeError, "even when requested individually"):
+            asyncio.run(self._gemini_processor(EmptyModels()).translate_transcript(
+                [{"start": 0, "duration": 1, "text": "Hello[[VTT_0]]World"}],
+                "de", "gemini-test"))
+
     def test_translation_retries_only_missing_ids_and_preserves_fields(self):
         processor = SummaryProcessor.__new__(SummaryProcessor)
         models = FakeGeminiModels()

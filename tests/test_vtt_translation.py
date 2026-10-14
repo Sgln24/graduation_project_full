@@ -3,6 +3,8 @@ import asyncio
 import tempfile
 import unittest
 import zipfile
+import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -40,6 +42,33 @@ Second line
 
 
 class VttTranslationTests(unittest.TestCase):
+    def test_zip_survives_model_that_never_preserves_group_markers(self):
+        processor = SummaryProcessor.__new__(SummaryProcessor)
+        processor.model = True
+        processor.model_name = "gemini-test"
+        processor._refresh_clients = lambda: None
+        processor._provider_chain = lambda *args, **kwargs: [("gemini", "gemini-test")]
+        requests = []
+        def complete(provider, model, prompt, *args):
+            payload = json.loads(prompt.split("\n", 1)[1])
+            requests.append(payload["lines"])
+            return json.dumps({"translations": [
+                {"id": item["id"], "text": re.sub(r"\[\[VTT_[0-9]+\]\]", "", item["text"])
+                 .replace("Hello", "Hallo").replace("Second", "Zweite")}
+                for item in payload["lines"]
+            ]})
+        processor._complete = complete
+        with tempfile.TemporaryDirectory() as temporary:
+            response = asyncio.run(translate_vtt_batch(
+                [("source.vtt", parse_vtt(VTT))], "de", "gemini-test", processor, temporary, lambda _: None))
+            with zipfile.ZipFile(response.path) as archive:
+                output = archive.read("source_DE.vtt").decode()
+                self.assertIn("<v Speaker><b>Hallo &amp; welcome</b></v>\nZweite line", output)
+                self.assertEqual(parse_vtt(output.encode())["cues"], 2)
+                report = json.loads(archive.read("translation-report.json"))[0]
+                self.assertEqual(report["usage"]["requests"], 5)
+        self.assertEqual(len(requests), 5)
+
     def test_grouping_reduces_ids_without_changing_cues_or_formatting(self):
         content = b"WEBVTT\n\n" + b"\n\n".join(
             f"cue-{index}\n00:{index // 60:02d}:{index % 60:02d}.000 --> "

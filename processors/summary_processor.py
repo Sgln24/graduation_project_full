@@ -990,14 +990,29 @@ class SummaryProcessor:
                         translated_by_id.update(
                             await request_translation(missing, "missing-segment")
                         )
-                    still_missing = [
-                        item["id"] for item in batch
-                        if item["id"] not in translated_by_id
-                    ]
-                    if still_missing:
-                        raise RuntimeError(
-                            f"Translation batch {batch_number} omitted "
-                            f"{len(still_missing)} segment(s) after a targeted retry"
+                    unresolved = [item for item in batch if item["id"] not in translated_by_id]
+                    if unresolved:
+                        report(f"{model_label}: translating {len(unresolved)} unresolved lines separately "
+                               f"in batch {batch_number}")
+                    for item in unresolved:
+                        markers = re.findall(r"\[\[VTT_[0-9]+\]\]", item["text"])
+                        fragments = re.split(r"\[\[VTT_[0-9]+\]\]", item["text"])
+                        parts = []
+                        for index, text in enumerate(fragments):
+                            fragment = {
+                                **item, "id": f"{item['id']}-part-{index}", "text": text,
+                                "seconds": round(item["seconds"] / len(fragments), 1),
+                            }
+                            translated_fragment = await request_translation([fragment], "individual-fragment")
+                            if fragment["id"] not in translated_fragment:
+                                raise RuntimeError(
+                                    f"Translation batch {batch_number} omitted a caption fragment "
+                                    "even when requested individually"
+                                )
+                            parts.append(translated_fragment[fragment["id"]])
+                        translated_by_id[item["id"]] = "".join(
+                            text + (markers[index] if index < len(markers) else "")
+                            for index, text in enumerate(parts)
                         )
                 except Exception as error:
                     if abort["error"] is None:
