@@ -1,9 +1,13 @@
 import ast
 import asyncio
+import base64
+import html
 from io import BytesIO
 import json
 from pathlib import Path
+import re
 import shutil
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -17,6 +21,7 @@ from PIL import Image
 from slide_exports import (
     SlideExportError, build_slide_archive, build_slide_text_document,
     load_download_slides, slide_image_path, slide_text_groups, stored_slide_lines,
+    build_slide_transcript_html,
 )
 
 
@@ -71,6 +76,66 @@ class SlideExportTests(unittest.TestCase):
             self.assertEqual(manifest[1]["time_seconds"], 20)
             self.assertEqual(archive.read(manifest[0]["filename"]),
                              (self.images_dir / "lecture" / "0.jpg").read_bytes())
+
+    def test_screenshot_html_is_self_contained_and_matches_each_transcript_once(self):
+        transcript = [
+            {"start": 0, "duration": 12, "text": "Opening crosses slide boundary."},
+            {"start": 10, "duration": 1, "text": "Second screenshot text."},
+            {"start": 19, "duration": 2, "text": "Still second screenshot."},
+            {"start": 20, "duration": 1, "text": "<script>unsafe & text</script>"},
+            {"start": 40, "duration": 1, "text": "\u0645\u0631\u062d\u0628\u0627", "speaker": "A"},
+        ]
+        output = build_slide_transcript_html(
+            "lecture", transcript, self.scenes_dir, self.images_dir, 'Title <>&"',
+        )
+        self.assertEqual(output.count('src="data:image/jpeg;base64,'), 4)
+        self.assertNotIn("<script>", output)
+        self.assertNotIn("<video", output)
+        self.assertNotIn("summary", output)
+        self.assertNotIn('src="http', output)
+        sections = output.split("<section>")[1:]
+        self.assertIn("Opening crosses slide boundary.", sections[0])
+        self.assertNotIn("Opening crosses slide boundary.", sections[1])
+        self.assertIn("Second screenshot text.", sections[1])
+        self.assertIn("Still second screenshot.", sections[1])
+        self.assertIn("&lt;script&gt;unsafe &amp; text&lt;/script&gt;", sections[2])
+        self.assertIn('dir="auto"', output)
+        self.assertIn("A: \u0645\u0631\u062d\u0628\u0627", sections[3])
+        for item in transcript:
+            self.assertEqual(output.count(html.escape(item["text"])), 1)
+        encoded = sections[0].split('base64,', 1)[1].split('"', 1)[0]
+        self.assertEqual(base64.b64decode(encoded), (self.images_dir / "lecture" / "0.jpg").read_bytes())
+
+    def test_screenshot_html_leading_text_sorted_slides_and_empty_ranges(self):
+        self.scenes[0]["time_seconds"] = 50
+        self.scenes[1]["time_seconds"] = 5
+        self.save_scenes()
+        output = build_slide_transcript_html(
+            "lecture", [{"start": 0, "text": "Before first"}, {"start": 55, "text": "Last"}],
+            self.scenes_dir, self.images_dir, "Lecture",
+        )
+        sections = output.split("<section>")[1:]
+        self.assertIn("00:00:05", sections[0])
+        self.assertIn("Before first", sections[0])
+        self.assertNotIn("<p", sections[1])
+        self.assertIn("00:00:50", sections[-1])
+        self.assertIn("Last", sections[-1])
+
+    def test_screenshot_html_rejects_invalid_transcript_and_missing_or_corrupt_images(self):
+        for transcript in ([], None, [{"text": "Missing timestamp"}],
+                           [{"start": float("nan"), "text": "Invalid"}],
+                           [{"start": -1, "text": "Negative"}],
+                           [{"start": 0, "text": ""}], [{"start": 0, "text": None}]):
+            with self.subTest(transcript=transcript), self.assertRaises(SlideExportError):
+                build_slide_transcript_html("lecture", transcript, self.scenes_dir, self.images_dir, "Lecture")
+        (self.images_dir / "lecture" / "0.jpg").write_bytes(b"not an image")
+        with self.assertRaisesRegex(SlideExportError, "Could not read screenshot"):
+            build_slide_transcript_html("lecture", [{"start": 0, "text": "Hello"}],
+                                       self.scenes_dir, self.images_dir, "Lecture")
+        (self.images_dir / "lecture" / "0.jpg").unlink()
+        with self.assertRaisesRegex(SlideExportError, "Missing screenshot"):
+            build_slide_transcript_html("lecture", [{"start": 0, "text": "Hello"}],
+                                       self.scenes_dir, self.images_dir, "Lecture")
 
     def test_invalid_selection_paths_and_missing_slides(self):
         for indices in (None, [], [True], [-1], [4], ["0"]):
@@ -154,19 +219,24 @@ class SlideExportTests(unittest.TestCase):
         self.assertEqual(result.exception.status_code, 503)
 
     def test_routes_set_download_headers_and_surface_validation_errors(self):
-        names = {"download_slide", "download_selected_slides", "download_slide_text_docx"}
+        names = {"download_slide", "download_selected_slides", "download_slide_text_docx",
+                 "download_scene_screenshots", "ascii_filename", "screenshot_archive_filename"}
         tree = ast.parse((ROOT / "main.py").read_text(encoding="utf-8"))
-        nodes = [node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name in names]
+        nodes = [node for node in tree.body
+                 if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name in names]
         for node in nodes:
             node.decorator_list = []
         namespace = {
             "Request": object, "asyncio": asyncio, "json": json,
             "HTTPException": SlideExportError, "SCENES_DIR": self.scenes_dir,
             "FULLSIZE_IMAGES_DIR": self.images_dir, "SUMMARIES_DIR": self.summaries_dir,
+            "VIDEO_DIR": self.root, "EXPORTS_DIR": self.root, "Path": Path,
+            "re": re, "tempfile": tempfile, "zipfile": zipfile,
             "FileResponse": lambda source, **kwargs: SimpleNamespace(source=source, **kwargs),
             "StreamingResponse": lambda content, **kwargs: SimpleNamespace(content=b"".join(content), **kwargs),
         }
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)
+        (self.root / "metadata.json").write_text(json.dumps({"lecture": {"filename": "Course Intro.mp4"}}))
         response = asyncio.run(namespace["download_slide"]("lecture", 1))
         self.assertEqual(response.filename, "slide_002_00-00-10.jpg")
         self.assertEqual(response.media_type, "image/jpeg")
@@ -175,6 +245,7 @@ class SlideExportTests(unittest.TestCase):
         response = asyncio.run(namespace["download_selected_slides"]("lecture", SimpleNamespace(json=payload)))
         self.assertEqual(response.media_type, "application/zip")
         self.assertIn("attachment", response.headers["Content-Disposition"])
+        self.assertIn('filename="Course_Intro_screenshots.zip"', response.headers["Content-Disposition"])
         with zipfile.ZipFile(BytesIO(response.content)) as archive:
             self.assertEqual(len(archive.namelist()), 3)
         with mock.patch("slide_exports.recognize_slide_image", return_value="OCR text"):
@@ -185,6 +256,12 @@ class SlideExportTests(unittest.TestCase):
         with self.assertRaises(SlideExportError) as result:
             asyncio.run(namespace["download_slide"]("lecture", 99))
         self.assertEqual(result.exception.status_code, 404)
+        response = asyncio.run(namespace["download_scene_screenshots"]("lecture"))
+        self.assertEqual(response.filename, "Course_Intro_screenshots.zip")
+        self.assertEqual(namespace["screenshot_archive_filename"]("unknown"), "lecture_screenshots.zip")
+        (self.root / "metadata.json").write_text("invalid JSON")
+        with self.assertRaisesRegex(SlideExportError, "Could not read the original video filename"):
+            namespace["screenshot_archive_filename"]("lecture")
 
     def test_http_downloads_and_invalid_requests(self):
         from fastapi import FastAPI, HTTPException, Request
@@ -192,13 +269,16 @@ class SlideExportTests(unittest.TestCase):
         from fastapi.testclient import TestClient
 
         app = FastAPI()
-        names = {"download_slide", "download_selected_slides", "download_slide_text_docx"}
+        names = {"download_slide", "download_selected_slides", "download_slide_text_docx",
+                 "ascii_filename", "screenshot_archive_filename"}
         tree = ast.parse((ROOT / "main.py").read_text(encoding="utf-8"))
-        nodes = [node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name in names]
+        nodes = [node for node in tree.body
+                 if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef)) and node.name in names]
         namespace = {
             "app": app, "Request": Request, "asyncio": asyncio, "json": json,
             "HTTPException": HTTPException, "SCENES_DIR": self.scenes_dir,
             "FULLSIZE_IMAGES_DIR": self.images_dir, "SUMMARIES_DIR": self.summaries_dir,
+            "VIDEO_DIR": self.root, "Path": Path, "re": re,
             "FileResponse": FileResponse, "StreamingResponse": StreamingResponse,
         }
         exec(compile(ast.Module(body=nodes, type_ignores=[]), "main.py", "exec"), namespace)

@@ -17,6 +17,7 @@ export const elements = {
     get exportWord() { return document.getElementById('exportWord'); },
     get exportPdf() { return document.getElementById('exportPdf'); },
     get exportWebpage() { return document.getElementById('exportWebpage'); },
+    get exportScreenshotTranscript() { return document.getElementById('exportScreenshotTranscript'); },
     get exportOutline() { return document.getElementById('exportOutline'); },
     get exportScorm() { return document.getElementById('exportScorm'); },
     get exportAvailabilityNote() { return document.getElementById('exportAvailabilityNote'); },

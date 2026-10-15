@@ -1,5 +1,8 @@
 """Full-size slide downloads and a chapter/section-organized OCR Word document."""
 from io import BytesIO
+import base64
+from bisect import bisect_right
+import html
 import json
 import math
 from pathlib import Path
@@ -93,6 +96,62 @@ def build_slide_archive(video_id, indices, scenes_dir, images_dir):
         archive.writestr("screenshots.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     output.seek(0)
     return output
+
+
+def build_slide_transcript_html(video_id, transcript, scenes_dir, images_dir, title):
+    scenes = load_download_slides(video_id, scenes_dir)
+    if not isinstance(transcript, list) or not transcript:
+        raise SlideExportError(400, "A transcript is required for the screenshots and transcript HTML.")
+    ordered = sorted(range(len(scenes)), key=lambda index: (slide_seconds(scenes[index]), index))
+    starts = [slide_seconds(scenes[index]) for index in ordered]
+    groups = [[] for _ in ordered]
+    segments = []
+    for item in transcript:
+        try:
+            start = float(item["start"])
+            text = item["text"]
+            if not math.isfinite(start) or start < 0 or not isinstance(text, str):
+                raise ValueError
+        except (KeyError, TypeError, ValueError) as error:
+            raise SlideExportError(400, "Transcript entries need valid timestamps and text.") from error
+        if text.strip():
+            segments.append((start, item))
+    if not segments:
+        raise SlideExportError(400, "The transcript has no text to export.")
+    for start, item in sorted(segments, key=lambda segment: segment[0]):
+        groups[max(0, bisect_right(starts, start) - 1)].append(item)
+    parts = [
+        '<!doctype html><html><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        f"<title>{html.escape(str(title))}</title>",
+        "<style>body{font-family:system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;"
+        "line-height:1.6;color:#222}section{margin:2rem 0;break-inside:avoid}img{display:block;"
+        "max-width:100%;height:auto;border:1px solid #ddd}p{white-space:pre-wrap}"
+        "h2{font-size:1.1rem}time{color:#666;font-size:.9rem}bdi{unicode-bidi:plaintext}</style>",
+        f"</head><body><h1 dir=\"auto\">{html.escape(str(title))}</h1>",
+    ]
+    for position, index in enumerate(ordered):
+        source = slide_image_path(video_id, index, scenes, images_dir)
+        try:
+            with Image.open(source) as image:
+                if image.format != "JPEG":
+                    raise ValueError("Screenshot is not a JPEG")
+                image.verify()
+            encoded = base64.b64encode(source.read_bytes()).decode("ascii")
+        except (OSError, ValueError) as error:
+            raise SlideExportError(409, f"Could not read screenshot {index + 1}. Run slide detection again.") from error
+        seconds = int(starts[position])
+        clock = f"{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}"
+        parts.extend([
+            f'<section><h2>Screenshot {position + 1} - <time>{clock}</time></h2>',
+            f'<img src="data:image/jpeg;base64,{encoded}" alt="Screenshot {position + 1} at {clock}">',
+        ])
+        for item in groups[position]:
+            speaker = f"{item['speaker']}: " if item.get("speaker") else ""
+            parts.append(f'<p dir="auto">{html.escape(speaker + item["text"].strip())}</p>')
+        parts.append("</section>")
+    parts.append("</body></html>")
+    return "\n".join(parts)
 
 
 def clean_ocr_lines(text):

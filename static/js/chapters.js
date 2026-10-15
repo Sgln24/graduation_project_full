@@ -73,6 +73,9 @@ export function updateExportAvailability() {
     if (elements.exportOutline) {
         elements.exportOutline.disabled = !canBuildParts || !hasTranscript;
     }
+    if (elements.exportScreenshotTranscript) {
+        elements.exportScreenshotTranscript.disabled = !hasVideo || !hasSlides || !hasTranscript;
+    }
     const sectionClips = document.getElementById('exportSectionClips');
     if (sectionClips) sectionClips.disabled = !canBuildParts || !hasTranscript;
 
@@ -254,6 +257,8 @@ export async function exportChapters() {
             include_word: !elements.exportWord?.disabled && (elements.exportWord?.checked ?? false),
             include_pdf: !elements.exportPdf?.disabled && (elements.exportPdf?.checked ?? false),
             include_webpage: !elements.exportWebpage?.disabled && (elements.exportWebpage?.checked ?? true),
+            include_screenshot_transcript: !elements.exportScreenshotTranscript?.disabled
+                && (elements.exportScreenshotTranscript?.checked ?? false),
             include_outline: !elements.exportOutline?.disabled && (elements.exportOutline?.checked ?? false),
             include_scorm: !elements.exportScorm?.disabled && (elements.exportScorm?.checked ?? false),
             chapter_grouping: elements.chapterGrouping?.value || 'topic',
@@ -268,6 +273,9 @@ export async function exportChapters() {
             transcript_language: state.currentTranslationLanguage || '',
             media_export_id: selectedMediaExportId(videoId),
         };
+        if (options.include_screenshot_transcript) {
+            options.screenshot_transcript = state.currentTranscript.map(item => ({...item}));
+        }
         if (elements.exportOptionsDialog?.open) elements.exportOptionsDialog.close();
         renderExportSteps({status: 'running', steps: [{elapsed: 0, message: 'Starting export job'}]});
         const response = await fetch(`/export_jobs/${encodeURIComponent(videoId)}`, {
@@ -308,11 +316,19 @@ export async function exportChapters() {
         const blob = await downloadResponse.blob();
         const directWord = options.include_word && !options.include_pdf
             && !options.include_webpage && !options.include_outline && !options.include_scorm
+            && !options.include_screenshot_transcript
             && !options.include_images && !options.include_transcripts && !options.include_clips;
         const directPdf = options.include_pdf && !options.include_word
             && !options.include_webpage && !options.include_outline && !options.include_scorm
+            && !options.include_screenshot_transcript
             && !options.include_images && !options.include_transcripts && !options.include_clips;
-        const fallbackFilename = directWord
+        const directScreenshotHtml = options.include_screenshot_transcript
+            && !options.include_images && !options.include_transcripts && !options.include_clips
+            && !options.include_word && !options.include_pdf && !options.include_webpage
+            && !options.include_outline && !options.include_scorm && !options.include_section_clips;
+        const fallbackFilename = directScreenshotHtml
+            ? `${videoId}_screenshots_transcript.html`
+            : directWord
             ? `${videoId}_chapter_document.docx`
             : directPdf
                 ? `${videoId}_chapter_document.pdf`

@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -30,7 +31,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.units import inch
 from reportlab.platypus import Image as PdfImage, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer
-from export_jobs import export_workspace
+from export_jobs import ExportJobStore, export_workspace
 from ffmpeg_tools import media_executable
 
 
@@ -127,6 +128,84 @@ class ExportDocumentTests(unittest.TestCase):
                    and (part["end"] is None or item["start"] < part["end"])] for part in chapters]
         self.assertEqual(" ".join(text for chunk in chunks for text in chunk),
                          " ".join(item["text"] for item in self.transcript))
+
+    def create_detected_images(self):
+        directory = self.functions["FULLSIZE_IMAGES_DIR"] / "lecture"
+        directory.mkdir()
+        for index in range(2):
+            PillowImage.new("RGB", (32, 18), "white").save(directory / f"{index}.jpg")
+
+    def test_screenshot_transcript_only_downloads_one_html_without_ai_or_ffmpeg(self):
+        self.create_detected_images()
+        self.functions["SUMMARIES_DIR"].joinpath("lecture.json").write_text("invalid saved summary")
+        self.functions["TRANSCRIPTS_DIR"].joinpath("lecture.json").unlink()
+        selected = [
+            {"start": 0, "duration": 1, "text": "Currently displayed translation."},
+            {"start": 9, "duration": 1, "text": "Second screenshot translation."},
+        ]
+        response = self.run_export(
+            include_screenshot_transcript=True, screenshot_transcript=selected,
+            document_title="Screenshots only", export_filename="my_lecture.zip",
+        )
+        self.assertEqual(response.path.suffix, ".html")
+        self.assertEqual(response.filename, "my_lecture.html")
+        self.assertEqual(response.media_type, "text/html")
+        output = response.path.read_text(encoding="utf-8")
+        self.assertIn("<h1 dir=\"auto\">Screenshots only</h1>", output)
+        self.assertIn(selected[0]["text"], output)
+        self.assertIn(selected[1]["text"], output)
+        self.assertEqual(output.count('src="data:image/jpeg;base64,'), 2)
+        self.assertNotIn("Neural networks", output)
+        self.assertNotIn("<video", output)
+        self.assertEqual(self.media_commands, [], "No clip encoding or duration probing")
+
+    def test_screenshot_html_can_be_packaged_with_other_deliverables(self):
+        self.create_detected_images()
+        response = self.run_export(include_screenshot_transcript=True, include_transcripts=True)
+        with zipfile.ZipFile(response.path) as archive:
+            self.assertIn("screenshots_transcript.html", archive.namelist())
+            self.assertIn("transcript_by_chapter.md", archive.namelist())
+            self.assertNotIn("index.html", archive.namelist())
+            self.assertFalse(any(name.endswith((".jpg", ".mp4")) for name in archive.namelist()))
+            self.assertIn("Neural networks learn", archive.read("screenshots_transcript.html").decode())
+
+    def test_screenshot_html_needs_detected_slides_and_transcript(self):
+        self.create_detected_images()
+        with self.assertRaises(HTTPException) as raised:
+            self.run_export(include_screenshot_transcript=True, screenshot_transcript=[])
+        self.assertEqual(raised.exception.status_code, 400)
+        self.functions["SCENES_DIR"].joinpath("lecture.json").unlink()
+        with self.assertRaises(HTTPException) as raised:
+            self.run_export(include_screenshot_transcript=True)
+        self.assertEqual(raised.exception.status_code, 404)
+
+    def test_screenshot_html_job_download_and_open_link_survive_restart(self):
+        self.create_detected_images()
+        store = ExportJobStore(self.directory / "jobs")
+
+        async def generate(video_id, options, step, artifacts, workspace):
+            async def request_json():
+                return options
+            return await self.functions["export_chapters"](
+                video_id, SimpleNamespace(json=request_json), on_step=step,
+                on_artifacts=artifacts, export_root=workspace,
+            )
+
+        job_id = store.start("lecture", {"include_screenshot_transcript": True}, generate)
+        for _ in range(100):
+            state = store.read(job_id)
+            if state["status"] in {"complete", "error"}:
+                break
+            time.sleep(0.02)
+        self.assertEqual(state["status"], "complete", state.get("error"))
+        restarted = ExportJobStore(store.root)
+        saved = restarted.read(job_id)
+        self.assertTrue(saved["filename"].endswith(".html"))
+        self.assertTrue(saved["open_url"].endswith("/webpage/index.html"))
+        downloaded = restarted.file(job_id, saved["download_file"]).read_text(encoding="utf-8")
+        opened = restarted.file(job_id, "index.html", webpage=True).read_text(encoding="utf-8")
+        self.assertEqual(downloaded, opened)
+        self.assertEqual(opened.count('src="data:image/jpeg;base64,'), 2)
 
     def test_caption_copy_is_used_for_chapter_and_section_clips(self):
         copy = self.directory / "caption-copy.mp4"

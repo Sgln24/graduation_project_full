@@ -6,7 +6,7 @@ import { updateTimelineHighlight, updateChapterCaptions } from './video.js';
 import { fetchOcrResults } from './ocr.js';
 import { showError } from './ui.js';
 import { saveBlobToUserLocation } from './utils.js';
-import { createSlideDownloadButton, setupSlideTextDownload } from './slide-downloads.js';
+import { createSlideDownloadButton, setupSlideTextDownload, screenshotArchiveFilename } from './slide-downloads.js';
 import { startElapsedTimer } from './progress-time.js';
 
 // Add state variable for label visibility
@@ -178,13 +178,16 @@ export async function downloadSceneScreenshots() {
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Preparing...';
     const stopElapsed = startElapsedTimer(button);
     try {
+        const filename = screenshotArchiveFilename();
         const response = await fetch(`/download_scene_screenshots/${encodeURIComponent(state.currentVideoId)}`);
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
             throw new Error(error.detail || 'Could not download slide screenshots');
         }
         const blob = await response.blob();
-        await saveBlobToUserLocation(blob, `${state.currentVideoId}_slide_screenshots.zip`);
+        const disposition = response.headers?.get('content-disposition') || '';
+        const match = disposition.match(/filename="?([^";]+)"?/i);
+        await saveBlobToUserLocation(blob, match ? match[1] : filename);
     } catch (error) {
         showError(`Error downloading screenshots: ${error.message}`);
     } finally {

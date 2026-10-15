@@ -3,6 +3,13 @@ import { showError } from './ui.js';
 import { saveBlobToUserLocation } from './utils.js';
 import { startElapsedTimer } from './progress-time.js';
 
+export function screenshotArchiveFilename() {
+    const stem = (state.currentVideoFilename || 'lecture').replace(/\.[^.]+$/, '')
+        .normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '_')
+        .replace(/^[._-]+|[._-]+$/g, '').slice(0, 80) || 'lecture';
+    return `${stem}_screenshots.zip`;
+}
+
 async function saveSlideExport(url, filename, button, options) {
     const content = button.innerHTML;
     button.disabled = true;
@@ -13,6 +20,11 @@ async function saveSlideExport(url, filename, button, options) {
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
             throw new Error(error.detail || `Slide export failed (${response.status})`);
+        }
+        if (filename.endsWith('.zip')) {
+            const disposition = response.headers?.get('content-disposition') || '';
+            const match = disposition.match(/filename="?([^";]+)"?/i);
+            if (match) filename = match[1];
         }
         await saveBlobToUserLocation(await response.blob(), filename);
     } catch (error) {
@@ -26,6 +38,7 @@ async function saveSlideExport(url, filename, button, options) {
 }
 
 export function createSlideDownloadButton(indices, label, {archive = false, videoId = state.currentVideoId} = {}) {
+    const archiveFilename = screenshotArchiveFilename();
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn btn-secondary btn-action btn-icon slide-download';
@@ -47,8 +60,7 @@ export function createSlideDownloadButton(indices, label, {archive = false, vide
             void saveSlideExport(`/download_slide/${base}/${indices[0]}`,
                 `${videoId}_slide_${indices[0] + 1}.jpg`, button);
         } else {
-            const safeLabel = label.replace(/^Download /, '').replace(/[^a-z0-9_-]+/gi, '_').slice(0, 80);
-            void saveSlideExport(`/download_slides/${base}`, `${videoId}_${safeLabel}.zip`, button, {
+            void saveSlideExport(`/download_slides/${base}`, archiveFilename, button, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({indices}),

@@ -27,6 +27,7 @@ const elements = {
     exportWord: { checked: false },
     exportPdf: { checked: false },
     exportWebpage: { checked: true },
+    exportScreenshotTranscript: { checked: false },
     exportOutline: { checked: false },
     exportScorm: { checked: false },
     exportAvailabilityNote: {},
@@ -88,6 +89,8 @@ assert.equal(elements.exportWebpage.disabled, false);
     assert.equal(payload.timestamp_mode, 'subpart');
     assert.equal(payload.include_webpage, true);
     assert.equal(payload.media_export_id, 'caption-copy', 'Chapter clips must use the chosen video copy');
+    assert.equal(payload.include_screenshot_transcript, false);
+    assert.equal(elements.exportScreenshotTranscript.disabled, true, 'Screenshot export requires detected slides');
     for (const field of ['include_images', 'include_transcripts', 'include_clips', 'include_word', 'include_pdf']) {
         assert.equal(payload[field], false, `${field} must not be implicitly enabled by HTML`);
     }
@@ -106,13 +109,32 @@ assert.equal(elements.exportWebpage.disabled, false);
     assert.equal(payload.chapter_grouping, 'slides');
     assert.equal(payload.timestamp_mode, 'part');
     assert.equal(payload.subpart_mode, 'slides');
+    state.videoScenes = [{time_seconds: 0}, {time_seconds: 10}];
+    elements.exportScreenshotTranscript.checked = true;
+    context.updateExportAvailability();
+    assert.equal(elements.exportScreenshotTranscript.disabled, false);
+    await context.exportChapters();
+    assert.equal(payload.include_screenshot_transcript, true);
+    assert.deepEqual(payload.screenshot_transcript, state.currentTranscript, 'Snapshot the displayed transcript');
+    elements.exportWebpage = {checked: false};
+    for (const control of ['exportImages', 'exportTranscripts', 'exportClips', 'exportWord',
+        'exportPdf', 'exportWebpage', 'exportOutline', 'exportScorm', 'exportSectionClips']) {
+        if (elements[control]) elements[control].checked = false;
+    }
+    state.videoChapters = [];
+    context.updateExportAvailability();
+    await context.exportChapters();
+    assert.equal(payload.include_screenshot_transcript, true, 'Does not require AI chapters');
+    assert.equal(payload.include_webpage, false);
+    assert(Object.entries(payload).filter(([key]) => key.startsWith('include_'))
+        .every(([key, value]) => key === 'include_screenshot_transcript' || value === false));
     assert.deepEqual(errors, []);
-    assert.equal(downloads, 3, 'Each completed export must download, not silently stop after posting');
+    assert.equal(downloads, 5, 'Each completed export must download, not silently stop after posting');
     jobFails = true;
     await context.exportChapters();
     assert.equal(errors.at(-1), 'Error exporting chapters: Clip encoding failed');
     assert.equal(state.exportInProgress, false);
     assert.equal(elements.exportChaptersBtn.disabled, false);
-    assert.equal(downloads, 3, 'A failed job must not produce a download');
+    assert.equal(downloads, 5, 'A failed job must not produce a download');
     console.log('PASS: content-chapter defaults, HTML-only flags, no forced intervals, explicit modes preserved');
 })().catch(error => { console.error(error); process.exitCode = 1; });

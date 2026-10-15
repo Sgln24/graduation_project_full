@@ -295,6 +295,23 @@ These are the changes specifically described as fixes to the inherited project. 
   open `index.html` locally. TXT/Markdown/JSON transcript files are packaged only
   when **Transcript files** is selected; other explicitly chosen formats remain
   included. Content-only, slide-only and fixed-interval grouping remain available.
+- **Screenshots + transcript only (HTML)**: In **Export Chapters**, select this
+  option after detecting slides and loading a transcript. Uncheck the other
+  formats (including the default **HTML webpage**) to download a single,
+  self-contained `.html` file. Each saved screenshot is embedded directly in the
+  file, followed by the corresponding currently displayed transcript or
+  translation. Fragments are assigned once by their start time to the visible
+  screenshot; a fragment crossing a slide boundary remains with its starting
+  screenshot, leading speech accompanies the first image, and final speech
+  accompanies the last. Screenshots remain in chronological order even if a
+  slide has no spoken text. There are no summaries, OCR text, video clips,
+  external assets, AI calls or video encoding for this format alone. Open the
+  download offline in a browser or revisit its **Saved exports** link.
+  Selecting other formats too includes `screenshots_transcript.html` in the ZIP
+  alongside those explicitly chosen outputs, whose existing processing is
+  unchanged.
+  Screenshot-only ZIP downloads use the original video's readable filename
+  followed by `_screenshots.zip`, not its internal hash or a long button label.
 - **Web Interface**: FastAPI-based web application with real-time updates
 
 ### Dedicated translation services

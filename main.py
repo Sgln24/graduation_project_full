@@ -643,7 +643,7 @@ async def download_scene_screenshots(video_id: str):
     return FileResponse(
         zip_path,
         media_type="application/zip",
-        filename=f"{video_id}_slide_screenshots.zip"
+        filename=screenshot_archive_filename(video_id)
     )
 
 # Slide downloads are independent of chapter clip/transcript export jobs.
@@ -675,7 +675,7 @@ async def download_selected_slides(video_id: str, request: Request):
         raise HTTPException(status_code=error.status_code, detail=error.detail) from error
     return StreamingResponse(
         iter([archive.getvalue()]), media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{video_id}_slides.zip"'},
+        headers={"Content-Disposition": f'attachment; filename="{screenshot_archive_filename(video_id)}"'},
     )
 
 
@@ -1150,6 +1150,20 @@ def ascii_filename(text: str) -> str:
         text = text.replace(source, target)
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     return re.sub(r"[^A-Za-z0-9._-]+", "_", text).strip("._-")[:80]
+
+
+def screenshot_archive_filename(video_id: str) -> str:
+    metadata_path = VIDEO_DIR / "metadata.json"
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.is_file() else {}
+    except (OSError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=500, detail="Could not read the original video filename.") from error
+    if not isinstance(metadata, dict) or not isinstance(metadata.get(video_id, {}), dict):
+        raise HTTPException(status_code=500, detail="Invalid saved video filename metadata.")
+    filename = metadata.get(video_id, {}).get("filename") or "lecture"
+    if not isinstance(filename, str):
+        raise HTTPException(status_code=500, detail="Invalid saved video filename.")
+    return f"{ascii_filename(Path(filename).stem) or 'lecture'}_screenshots.zip"
 
 
 @app.post("/export_suggestions/{video_id}")
@@ -1691,6 +1705,8 @@ def export_archive_paths(directory, flags):
         names.add("video_outline.docx")
     if flags["include_transcripts"]:
         names.update({"transcript_by_chapter.md", "chapters.json"})
+    if flags.get("include_screenshot_transcript"):
+        names.add("screenshots_transcript.html")
     return [
         path for path in directory.iterdir() if path.name in names
         or (path.suffix == ".jpg" and (flags["include_images"] or webpage))
@@ -2228,6 +2244,7 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
         "include_images", "include_transcripts", "include_clips",
         "include_word", "include_pdf", "include_webpage", "include_outline", "include_scorm",
         "include_section_clips",
+        "include_screenshot_transcript",
     )}
     if not any(export_flags.values()):
         raise HTTPException(status_code=400, detail="Select at least one export option")
@@ -2243,6 +2260,45 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
     if not video_path:
         raise HTTPException(status_code=404, detail="Video not found")
     scene_path = SCENES_DIR / f"{video_id}.json"
+    screenshot_html = None
+    if export_flags["include_screenshot_transcript"]:
+        from slide_exports import SlideExportError, build_slide_transcript_html
+        screenshot_transcript = options.get("screenshot_transcript")
+        if screenshot_transcript is None:
+            candidates = (
+                [TRANSCRIPTS_DIR / f"{video_id}_translated_{transcript_language}.json"]
+                if transcript_language else []
+            ) + [
+                TRANSCRIPTS_DIR / f"{video_id}_whisper.json",
+                TRANSCRIPTS_DIR / f"{video_id}_youtube.json",
+                TRANSCRIPTS_DIR / f"{video_id}.json",
+            ]
+            screenshot_transcript = []
+            for candidate in candidates:
+                if candidate.is_file():
+                    screenshot_transcript = json.loads(candidate.read_text(encoding="utf-8"))
+                    break
+        screenshot_title = str(options.get("document_title", "")).strip() or Path(video_path).stem
+        step("Building screenshots and corresponding transcript HTML; no summaries or video encoding")
+        try:
+            screenshot_html = await asyncio.to_thread(
+                build_slide_transcript_html, video_id, screenshot_transcript,
+                SCENES_DIR, FULLSIZE_IMAGES_DIR, screenshot_title,
+            )
+        except SlideExportError as error:
+            raise HTTPException(status_code=error.status_code, detail=error.detail) from error
+        if not any(value for name, value in export_flags.items() if name != "include_screenshot_transcript"):
+            export_root.mkdir(parents=True, exist_ok=True)
+            requested_name = str(options.get("export_filename", "")).strip() or f"{screenshot_title}_screenshots_transcript"
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", requested_name).strip("._-") or "screenshots_transcript"
+            output = export_root / (Path(safe_name).stem + ".html" if Path(safe_name).suffix else safe_name + ".html")
+            output.write_text(screenshot_html, encoding="utf-8")
+            if on_artifacts:
+                with export_workspace(step) as directory:
+                    index = Path(directory) / "index.html"
+                    index.write_text(screenshot_html, encoding="utf-8")
+                    on_artifacts(Path(directory), [index], screenshot_title)
+            return FileResponse(output, media_type="text/html", filename=output.name)
     if interval_minutes is None and chapter_grouping in {"slides", "combined"} and not scene_path.is_file():
         if chapter_grouping == "slides":
             raise HTTPException(status_code=400, detail="Detect slides before exporting by slide changes")
@@ -2361,6 +2417,8 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
             document_title = requested_title
         with export_workspace(step) as temp_dir_name:
             temp_dir = Path(temp_dir_name)
+            if screenshot_html is not None:
+                (temp_dir / "screenshots_transcript.html").write_text(screenshot_html, encoding="utf-8")
             generic_name = (
                 bool(re.fullmatch(r"[0-9a-f]{32,64}", document_title, re.IGNORECASE))
                 or document_title.lower() in {"video", "meeting", "recording", "input"}
@@ -2847,12 +2905,14 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                 export_flags[name] for name in (
                     "include_word", "include_pdf", "include_webpage", "include_scorm",
                     "include_images", "include_transcripts", "include_clips", "include_section_clips",
+                    "include_screenshot_transcript",
                 )
             )
             no_extra_files = not any(
                 export_flags[name] for name in (
                     "include_images", "include_transcripts", "include_clips",
                     "include_webpage", "include_outline", "include_scorm", "include_section_clips",
+                    "include_screenshot_transcript",
                 )
             )
             if no_extra_files and (only_word or only_pdf):
