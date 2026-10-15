@@ -493,9 +493,13 @@ export async function translateTranscript() {
             updateChapters(data.chapters);
         }
         const usage = data.usage;
-        const tokenSummary = usage?.reported_requests
+        let tokenSummary = usage?.reported_requests
             ? `${usage.total_tokens.toLocaleString()} tokens (${usage.input_tokens.toLocaleString()} input, ${usage.output_tokens.toLocaleString()} output)${usage.complete ? '' : '; partial usage'}`
             : 'Token usage unavailable';
+        if (usage?.character_requests) {
+            const characters = `${usage.submitted_characters.toLocaleString()} characters submitted; ${usage.translated_characters.toLocaleString()} translated`;
+            tokenSummary = characters + (usage.llm_requests ? `; ${tokenSummary}` : '; no LLM tokens used');
+        }
         const models = usage?.models?.join(', ') || `${data.provider} ${data.model}`;
         const translationSummary =
             `${models}; ${data.batch_count} batch${data.batch_count === 1 ? '' : 'es'} in ${data.elapsed_seconds}s; ${tokenSummary}`;
@@ -544,18 +548,18 @@ export async function updateTranslationModelStatus() {
         elements.translationModel.dataset.available = String(hasTranslationModel);
         if (!hasTranslationModel) {
             elements.translationModelStatus.textContent =
-                'No translation model is configured. Set GOOGLE_API_KEY, GROQ_API_KEY or OPENAI_API_KEY in Colab and restart the server.';
+                'No translation provider is configured. Set an LLM API key, LIBRETRANSLATE_URL or MICROSOFT_TRANSLATOR_KEY on the server.';
             elements.translateTranscriptBtn.disabled = true;
             return;
         }
         const defaultDescription = `${data.translation_default_provider} ${data.translation_default_model}`;
         elements.translationModelStatus.textContent =
-            `Auto currently uses ${defaultDescription}. Groq uses sequential batches within provider limits; other providers use parallel batches.`;
+            `Auto currently uses ${defaultDescription}. Fallback order: configured LLMs, LibreTranslate, then Microsoft Translator.`;
         if (Array.isArray(data.translation_models)) {
             const selected = elements.translationModel.value;
             const automatic = document.createElement('option');
             automatic.value = '';
-            automatic.textContent = 'Auto (Groq preferred when configured)';
+            automatic.textContent = 'Auto (LLMs, then LibreTranslate, then Microsoft)';
             elements.translationModel.replaceChildren(automatic);
             for (const model of data.translation_models) {
                 const option = document.createElement('option');

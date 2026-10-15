@@ -113,8 +113,12 @@ These are the changes specifically described as fixes to the inherited project. 
   No video is uploaded and current lecture transcripts/detections are not modified.
   Translation model choices are shared with transcript translation, including
   Groq GPT-OSS 120B and GPT-OSS 20B, Gemini Flash/Flash-Lite
-  and OpenAI GPT-4.1 mini. Unconfigured or known-unavailable models are disabled.
-  Auto keeps configured Groq as its preferred provider. Groq has request/token
+  and OpenAI GPT-4.1 mini, plus dedicated LibreTranslate and Microsoft Translator.
+  Unconfigured or known-unavailable services/models are disabled.
+  Auto tries configured LLMs first (Groq preferred), then open-source LibreTranslate,
+  and Microsoft Translator last. If no LLM is configured, Auto starts with the
+  first configured translation service. Chapter generation still uses only LLMs.
+  Groq has request/token
   limits and uses small sequential batches; Gemini/OpenAI use bounded concurrency.
   **Allow model fallback** is enabled for Auto. Choosing a specific model turns
   it off; explicitly enable it to permit switching providers/models.
@@ -124,6 +128,7 @@ These are the changes specifically described as fixes to the inherited project. 
   chapter documents. Your browser's download settings determine the folder or
   whether to ask for a save location. The app does not create a separate
   save-picker placeholder before downloading.
+
 - **Caption Video Copies**: Select a transcript or translation from the saved
   versions, then click **Add captions to video** in the Transcript toolbar.
   Its **Transcript for captions** dropdown uses the same saved versions; changing
@@ -291,6 +296,51 @@ These are the changes specifically described as fixes to the inherited project. 
   when **Transcript files** is selected; other explicitly chosen formats remain
   included. Content-only, slide-only and fixed-interval grouping remain available.
 - **Web Interface**: FastAPI-based web application with real-time updates
+
+### Dedicated translation services
+
+These translate text directly, without prompts or model-generated JSON. The app
+batches caption fragments, validates returned text counts and uses the API's
+input-order guarantee to keep cue formatting locally. They work for both VTT
+batches and transcript translation.
+Choose a service explicitly to use it immediately rather than waiting for LLM
+fallbacks. Choosing it disables fallback by default; enable fallback explicitly
+to permit another configured provider after temporary network/quota failures.
+Authentication and malformed service responses remain explicit errors. With
+fallback enabled, persistently malformed or missing LLM output can move to the
+next provider after bounded recovery. Completed batches are retained within the
+current job when switching providers.
+
+- **LibreTranslate (open source)** uses Argos Translate. Use a hosted instance,
+  or run it separately yourself. Set `LIBRETRANSLATE_URL` on the application server
+  to the base URL (without `/translate`). For the hosted service, use
+  `https://libretranslate.com` and configure `LIBRETRANSLATE_API_KEY` server-side.
+  Hosted access requires an account/key and can incur charges despite the software
+  being open source. For a local server, an example URL is
+  `http://127.0.0.1:5000`. HTTP is accepted only on localhost; use HTTPS remotely.
+  Follow the [official installation guide](https://docs.libretranslate.com/) to
+  self-host it and install the language models you need. Language coverage, speed
+  and translation quality depend on the instance; no endpoint or language support
+  is assumed. The app sends up to 100 fragments / 10,000 UTF-16 units per request;
+  choose/configure a server that accepts those limits.
+- **Microsoft Translator** is the final optional proprietary fallback. Create an
+  Azure Translator resource and configure `MICROSOFT_TRANSLATOR_KEY`, plus
+  `MICROSOFT_TRANSLATOR_REGION` for regional or multi-service resources (not needed
+  for a global resource). Uses the standard v3 neural text translation API with
+  automatic source detection, not a generative LLM. Requests respect its
+  1,000-item / 50,000-character limits. Azure quotas and charges still apply.
+
+See [.env.example](.env.example) for empty configuration placeholders. Keys stay
+on the backend; do not paste them into browser controls or commit them. Restart
+the application after updating server configuration.
+
+Reports show submitted and successfully translated character counts for these
+services, not token counts. These are locally counted UTF-16 units (a conservative
+request-size measure), not a billing statement. Failed attempts are included in
+submitted counts; only successful ones in translated counts. Mixed LLM/service
+jobs report character counts alongside available LLM token usage. No additional
+Python dependency is needed to call the APIs. This integration does not install
+or start LibreTranslate automatically.
 
 ## Interactive User Interface
 

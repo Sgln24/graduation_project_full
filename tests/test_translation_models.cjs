@@ -19,6 +19,8 @@ let data = {
         {id: 'groq:llama-3.3-70b-versatile', label: 'Unavailable Llama', available: false},
         {id: 'groq:openai/gpt-oss-20b', label: 'GPT-OSS 20B', available: true},
         {id: 'gemini-test', label: 'Unavailable Gemini', available: false},
+        {id: 'libretranslate', label: 'LibreTranslate (open source)', available: true},
+        {id: 'microsoft-translator', label: 'Microsoft Translator v3 (NMT)', available: false},
     ],
 };
 const context = vm.createContext({
@@ -35,11 +37,18 @@ vm.runInContext(source.slice(start, end).replace('export ', ''), context);
     assert.equal(select.options.find(option => option.value.includes('llama')).disabled, true);
     assert.equal(select.options.find(option => option.value === 'gemini-test').disabled, true);
     assert.equal(select.options.find(option => option.value.endsWith('20b')).disabled, false);
+    assert.equal(select.options.find(option => option.value === 'libretranslate').disabled, false);
+    assert.equal(select.options.find(option => option.value === 'microsoft-translator').disabled, true);
     assert.equal(select.value, '', 'Unavailable selection resets to Auto');
     select.value = 'groq:openai/gpt-oss-20b';
     await context.updateTranslationModelStatus();
     assert.equal(select.value, 'groq:openai/gpt-oss-20b');
+    select.value = 'libretranslate';
+    await context.updateTranslationModelStatus();
+    assert.equal(select.value, 'libretranslate', 'Explicit dedicated service selection is retained');
+    assert.match(select.options.find(option => option.value === '').textContent, /LLMs, then LibreTranslate, then Microsoft/);
     delete data.translation_models;
+    select.value = 'groq:openai/gpt-oss-20b';
     data.groq_configured = false;
     await context.updateTranslationModelStatus();
     assert.equal(select.options.find(option => option.value.endsWith('20b')).disabled, true);

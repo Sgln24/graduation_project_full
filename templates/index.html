@@ -87,15 +87,16 @@
                         <option value="ar">Arabic</option>
                         <option value="pl">Polish</option>
                     </select>
-                    <label for="vttBatchModel">Translation model</label>
+                    <label for="vttBatchModel">Translation service / model</label>
                     <select id="vttBatchModel"></select>
                     <small id="vttBatchModelStatus" role="status"></small>
                     <label><input id="vttBatchFallback" type="checkbox" checked> Allow model fallback</label>
-                    <details class="ui-disclosure"><summary>Help</summary><p>Auto prefers configured Groq.
+                    <details class="ui-disclosure"><summary>Help</summary><p>Auto tries configured LLMs first (Groq preferred), then open-source LibreTranslate,
+                        then Microsoft Translator if configured.
                         Groq has request and token limits. Other providers may incur charges, including fallback calls.
                         Choosing a specific model turns fallback off; enable it explicitly to allow switching.
                         Selections are locked while a batch is running.
-                        Timestamps and cue formatting stay unchanged. Results include reported token usage.</p></details>
+                        Timestamps and cue formatting stay unchanged. Results include LLM token usage or service character counts.</p></details>
                     <div class="dialog-actions">
                         <button class="btn btn-secondary" type="submit">Close</button>
                         <button id="translateVttBatchBtn" class="btn btn-primary" type="button">Translate files</button>
@@ -326,6 +327,8 @@
                                     <option value="groq:openai/gpt-oss-120b">Groq GPT-OSS 120B (free)</option>
                                     <option value="groq:openai/gpt-oss-20b">Groq GPT-OSS 20B</option>
                                     <option value="gpt-4.1-mini">OpenAI GPT-4.1 mini (paid)</option>
+                                    <option value="libretranslate">LibreTranslate (open source)</option>
+                                    <option value="microsoft-translator">Microsoft Translator v3 (NMT)</option>
                                 </select>
                                 <small id="translationModelStatus">Checking configured translation models...</small>
                                 <label><input id="translationFallback" type="checkbox" checked> Allow model fallback</label>

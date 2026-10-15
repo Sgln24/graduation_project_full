@@ -99,10 +99,11 @@ async def yolo_status():
 async def runtime_status():
     """Report the compute device used by Whisper and available CUDA GPU."""
     summary_processor._refresh_clients()
-    default_chain = summary_processor._provider_chain(prefer_groq=True)
+    default_chain = summary_processor._translation_chain()
     translation_status = {
         "translation_default_provider": (
-            {"gemini": "Gemini", "groq": "Groq", "openai": "OpenAI"}[default_chain[0][0]]
+            {"gemini": "Gemini", "groq": "Groq", "openai": "OpenAI",
+             "libretranslate": "LibreTranslate", "microsoft": "Microsoft Translator"}[default_chain[0][0]]
             if default_chain else None
         ),
         "translation_default_model": default_chain[0][1] if default_chain else None,

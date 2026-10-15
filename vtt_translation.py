@@ -120,6 +120,12 @@ async def translate_vtt_batch(files, target, model, processor, workspace, step, 
     has_usage = any(usage["reported_requests"] for usage in usages)
     tokens = (f"{total:,} tokens ({input_tokens:,} input, {output_tokens:,} output)"
               + ("" if complete else "; partial usage, some requests unreported")) if has_usage else "Token usage unavailable"
+    character_requests = sum(usage.get("character_requests", 0) for usage in usages)
+    if character_requests:
+        submitted = sum(usage.get("submitted_characters", 0) for usage in usages)
+        translated = sum(usage.get("translated_characters", 0) for usage in usages)
+        characters = f"{submitted:,} characters submitted to translation services; {translated:,} successfully translated"
+        tokens = characters + (f"; {tokens}" if any(usage.get("llm_requests", 0) for usage in usages) else "; no LLM tokens used")
     step(f"Translation result: Models tried: {', '.join(models)}. {tokens}.")
     step(f"All {len(files)} VTT files translated; preparing ZIP")
     return FileResponse(output, media_type="application/zip", filename=output.name)

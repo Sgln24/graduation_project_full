@@ -14,6 +14,10 @@ except ImportError:
     OpenAI = None
 
 from project_paths import SUMMARIES_DIR
+from translation_services import (
+    SERVICE_MODELS, TranslationServiceError, configured_services,
+    service_batches, translate_texts, character_count,
+)
 
 # Gemini's free-tier quotas are counted per model, so another model often
 # still has quota when the selected one is exhausted.
@@ -26,7 +30,10 @@ MODEL_UNAVAILABLE_MARKERS = (
     "does not exist", "decommissioned", "deprecated",
 )
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-PROVIDER_LABELS = {"gemini": "Gemini", "groq": "Groq", "openai": "OpenAI"}
+PROVIDER_LABELS = {
+    "gemini": "Gemini", "groq": "Groq", "openai": "OpenAI",
+    "libretranslate": "LibreTranslate", "microsoft": "Microsoft Translator",
+}
 # Concurrent translation requests for Gemini/OpenAI; Groq stays at one.
 # A model that ran out of quota is skipped by automatic selection for a while.
 QUOTA_COOLDOWN_SECONDS = max(60, int(os.getenv("AI_QUOTA_COOLDOWN_SECONDS", "3600")))
@@ -68,6 +75,7 @@ TRANSLATION_MODELS = {
     "", *GEMINI_FALLBACK_MODELS, "gemini-2.5-flash", "gemini-2.5-flash-lite",
     "groq:openai/gpt-oss-120b", "groq:openai/gpt-oss-20b",
     "gpt-4.1-mini",
+    *SERVICE_MODELS,
 }
 _COMPLETION_USAGE = ContextVar("completion_usage", default=None)
 TRANSLATION_REQUEST_TIMEOUT = 30
@@ -76,11 +84,17 @@ _TRANSLATION_REQUEST = ContextVar("translation_request", default=False)
 
 def translation_usage(requests):
     """Account for reported usage only; never present missing usage as zero."""
-    reported = [request for request in requests if request.get("usage") is not None]
+    llm_requests = [request for request in requests if "characters" not in request]
+    reported = [request for request in llm_requests if request.get("usage") is not None]
+    services = [request for request in requests if "characters" in request]
     models = sorted({f"{request['provider']} {request['model']}" for request in requests})
     return {
         "requests": len(requests), "reported_requests": len(reported),
-        "complete": bool(requests) and len(reported) == len(requests),
+        "complete": bool(llm_requests) and len(reported) == len(llm_requests),
+        "llm_requests": len(llm_requests),
+        "character_requests": len(services),
+        "submitted_characters": sum(request["characters"] for request in services),
+        "translated_characters": sum(request["characters"] for request in services if request.get("succeeded")),
         "input_tokens": sum(request["usage"]["input_tokens"] for request in reported),
         "output_tokens": sum(request["usage"]["output_tokens"] for request in reported),
         "total_tokens": sum(request["usage"]["total_tokens"] for request in reported),
@@ -162,6 +176,8 @@ class SummaryProcessor:
     def _provider_chain_entry(requested_model):
         if not requested_model:
             return None
+        if requested_model in SERVICE_MODELS:
+            return (SERVICE_MODELS[requested_model][0], requested_model)
         if requested_model.startswith("gpt-"):
             return ("openai", requested_model)
         if requested_model.startswith("groq:"):
@@ -319,12 +335,28 @@ class SummaryProcessor:
         configured = {
             "gemini": bool(self.model), "groq": bool(getattr(self, "groq_client", None)),
             "openai": bool(getattr(self, "openai_client", None)),
+            **configured_services(),
         }
         return [
-            {"id": name, "label": name, "available": configured[self._provider_chain_entry(name)[0]]
+            {"id": name, "label": SERVICE_MODELS[name][1] if name in SERVICE_MODELS else name,
+             "available": configured[self._provider_chain_entry(name)[0]]
              and self._provider_chain_entry(name) not in getattr(self, "unavailable_models", set())}
             for name in sorted(TRANSLATION_MODELS) if name and not name.startswith("gemini-2.5")
         ]
+
+    def _translation_chain(self, requested_model=None):
+        chain = list(self._provider_chain(
+            None if requested_model in SERVICE_MODELS else requested_model, prefer_groq=True,
+        ))
+        configured = configured_services()
+        for model, (provider, _) in SERVICE_MODELS.items():
+            if configured[provider]:
+                pair = (provider, model)
+                if model == requested_model:
+                    chain.insert(0, pair)
+                else:
+                    chain.append(pair)
+        return chain
 
     @staticmethod
     def _provider_label(provider, index):
@@ -782,7 +814,7 @@ class SummaryProcessor:
             if not allow_fallback and not requested_model:
                 raise ValueError("Choose a model when automatic fallback is disabled")
             self._refresh_clients()
-            _chain = self._provider_chain(requested_model, prefer_groq=True)
+            _chain = self._translation_chain(requested_model)
             requested_pair = self._provider_chain_entry(requested_model)
             if (
                 requested_model
@@ -795,7 +827,10 @@ class SummaryProcessor:
             if not allow_fallback:
                 _chain = _chain[:1]
         if not _chain:
-            raise RuntimeError(self._no_provider_message())
+            raise RuntimeError(
+                "No translation provider is configured. Configure an LLM API key, "
+                "LIBRETRANSLATE_URL or MICROSOFT_TRANSLATOR_KEY on the server."
+            )
         provider, selected_model = _chain[0]
         done = {} if _done is None else _done
         started_at = _started_at or time.monotonic()
@@ -814,6 +849,12 @@ class SummaryProcessor:
         if len(translation_items) != len(transcript):
             raise ValueError("Every transcript segment must be an object")
         remaining_items = [item for item in translation_items if item["id"] not in done]
+
+        if provider in {"libretranslate", "microsoft"}:
+            return await self._translate_service(
+                transcript, remaining_items, target_language, _chain, _chain_offset,
+                on_progress, done, started_at, allow_fallback, requests,
+            )
 
         batches = (
             self._translation_batches(remaining_items, 60, 2500)
@@ -1047,7 +1088,12 @@ class SummaryProcessor:
                 self._mark_unavailable(provider, selected_model)
             elif self._is_quota_error(error) and "resource_exhausted" in str(error).lower():
                 self._mark_quota_exhausted(provider, selected_model)
-            if len(_chain) < 2 or not (unavailable or self._is_quota_error(error) or "timed out" in str(error).lower()):
+            malformed = (
+                isinstance(error, ValueError) and "after bounded recovery" in str(error)
+            ) or "even when requested individually" in str(error)
+            if len(_chain) < 2 or not (
+                unavailable or self._is_quota_error(error) or "timed out" in str(error).lower() or malformed
+            ):
                 raise error
             next_provider, next_model = _chain[1]
             print(
@@ -1056,7 +1102,7 @@ class SummaryProcessor:
                 f"{total_segments - len(done)} remaining lines: {error}"
             )
             report(
-                f"{model_label} is busy or out of quota; continuing the remaining "
+                f"{model_label} {'returned unusable output' if malformed else 'is busy or out of quota'}; continuing the remaining "
                 f"{total_segments - len(done)} lines with {PROVIDER_LABELS[next_provider]} {next_model}"
             )
             result = await self.translate_transcript(
@@ -1088,6 +1134,51 @@ class SummaryProcessor:
             "context_lines": context_lines,
             "elapsed_seconds": round(time.monotonic() - started_at, 1),
             "usage": translation_usage(requests),
+        }
+
+    async def _translate_service(
+        self, transcript, remaining, target, chain, offset, on_progress, done,
+        started_at, allow_fallback, requests,
+    ):
+        provider, model = chain[0]
+        batches = service_batches(remaining, provider)
+        def report(message):
+            if on_progress:
+                on_progress({
+                    "message": message, "completed_segments": len(done), "total_segments": len(transcript),
+                    "provider": PROVIDER_LABELS[provider], "model": model,
+                    "elapsed_seconds": round(time.monotonic() - started_at, 1),
+                    "usage": translation_usage(requests),
+                })
+        report(f"Translating {len(remaining)} lines in {len(batches)} batches with {PROVIDER_LABELS[provider]}")
+        try:
+            for number, batch in enumerate(batches, 1):
+                capture = {"provider": PROVIDER_LABELS[provider], "model": model,
+                           "characters": sum(character_count(item["text"]) for item in batch)}
+                requests.append(capture)
+                translated = await asyncio.to_thread(
+                    translate_texts, provider, [item["text"] for item in batch], target,
+                )
+                done.update({item["id"]: text for item, text in zip(batch, translated)})
+                capture["succeeded"] = True
+                report(f"{PROVIDER_LABELS[provider]}: translated batch {number} of {len(batches)}; "
+                       f"{len(done)} of {len(transcript)} lines done")
+        except TranslationServiceError as error:
+            if not allow_fallback or not error.transient or len(chain) < 2:
+                raise
+            report(f"{error} Continuing remaining lines with {PROVIDER_LABELS[chain[1][0]]}.")
+            result = await self.translate_transcript(
+                transcript, target, _chain=chain[1:], _chain_offset=offset + 1,
+                on_progress=on_progress, _done=done, _started_at=started_at,
+                allow_fallback=allow_fallback, _requests=requests,
+            )
+            result.setdefault("fallback_reason", str(error))
+            return result
+        return {
+            "transcript": [{**item, "text": done[f"segment-{index}"]} for index, item in enumerate(transcript)],
+            "provider": self._provider_label(provider, offset), "model": model,
+            "batch_count": len(batches), "context_lines": 0,
+            "elapsed_seconds": round(time.monotonic() - started_at, 1), "usage": translation_usage(requests),
         }
 
     @staticmethod

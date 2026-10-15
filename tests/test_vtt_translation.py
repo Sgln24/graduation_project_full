@@ -179,6 +179,11 @@ class VttTranslationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["job_id"], "a" * 32)
         self.assertEqual(store.start.call_args.args[0], "vtt-batch")
+        for service in ("libretranslate", "microsoft-translator"):
+            self.assertEqual(client.post("/vtt_translation_jobs",
+                data={"target_language": "de", "model": service, "allow_fallback": "false"},
+                files=files).status_code, 200)
+        response = client.post("/vtt_translation_jobs", data=data, files=files)
         generate = store.start.call_args.args[2]
         asyncio.run(generate("vtt-batch", {}, print, None, Path("workspace")))
         args = renderer.call_args.args
