@@ -327,7 +327,8 @@ code {
     box-shadow: var(--shadow-sm);
 }
 
-.btn.btn-action {
+.btn.btn-action,
+.btn.btn-options {
     text-decoration: none;
     background-color: var(--brand-soft);
     color: var(--brand);
@@ -335,22 +336,11 @@ code {
     box-shadow: inset 3px 0 0 var(--brand), var(--shadow-sm);
 }
 
-.btn.btn-action:hover:not(:disabled) {
+.btn.btn-action:hover:not(:disabled),
+.btn.btn-options:hover:not(:disabled) {
     background-color: var(--brand-soft-strong);
     border-color: var(--brand-hover);
     box-shadow: inset 3px 0 0 var(--brand-hover), var(--shadow-md);
-}
-
-.btn.btn-options {
-    background-color: var(--surface-1);
-    color: var(--text-2);
-    border-color: var(--border-strong);
-    box-shadow: none;
-}
-
-.btn.btn-options:hover:not(:disabled) {
-    background-color: var(--surface-2);
-    color: var(--text-1);
 }
 
 .btn.btn-danger {

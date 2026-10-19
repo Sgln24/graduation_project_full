@@ -264,12 +264,12 @@ These are the changes specifically described as fixes to the inherited project. 
   Narrow screens stack the panels and retain normal page scrolling.
   The interface uses a modern light theme that follows the operating system's
   dark-mode setting automatically, with visible keyboard focus and reduced
-  motion when the system requests it. Options controls stay neutral while
-  processing, preview and download actions use
-  accent-tinted buttons with an accent edge. Main start/save actions use solid
+  motion when the system requests it. Options, processing, preview and download
+  controls share visible accent-tinted buttons with an accent edge in both
+  themes. Options retain their text labels and open/closed indicators rather
+  than relying on color to identify their purpose. Main start/save actions use solid
   accent buttons; stop/delete actions use a red treatment. Navigation and
-  Cancel/Close controls remain neutral, so opening options is visually distinct
-  from starting work.
+  Cancel/Close controls remain neutral.
   The right panel is narrow, and option dialogs and Settings open over it so
   the video stays visible. Caption previews, transcript downloads and saved
   caption settings use the same side-panel placement and width on desktop.
