@@ -257,6 +257,7 @@
                                 <button id="deleteTranscriptVersionBtn" class="btn btn-danger transcript-version-delete" type="button" aria-label="Delete this saved version" title="Delete this saved version"><i class="fas fa-trash-alt"></i></button>
                             </div>
                             <div class="transcript-export-actions">
+                                <button id="edit-transcript-btn" class="btn btn-secondary btn-action" type="button" disabled>Edit transcript</button>
                                 <button id="openCaptionStyleBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-film" aria-hidden="true"></i> Add captions to video</button>
                                 <button id="downloadTranscriptBtn" class="btn btn-secondary btn-action" type="button"><i class="fas fa-download" aria-hidden="true"></i> Download transcript</button>
                             </div>
@@ -456,6 +457,7 @@
                                 <i class="fas fa-magic"></i> Generate Summary
                             </button>
                             <button id="summaryOptionsBtn" class="btn btn-secondary btn-options" type="button">Chapter options</button>
+                            <button id="edit-chapters-btn" class="btn btn-secondary btn-action" type="button" disabled>Edit chapters</button>
                             <label title="Show already detected slides beneath chapters and sections. Does not detect slides or run OCR.">
                                 <input type="checkbox" id="chapterSlidesToggle"> Add detected slides
                             </label>
@@ -573,6 +575,7 @@
                     
                     <div class="tab-pane" id="scenes-tab">
                         <div class="controls-bar">
+                            <button id="edit-slides-btn" class="btn btn-secondary btn-action" type="button" disabled>Edit slide titles</button>
                             <button id="detectScenesBtn" class="btn btn-secondary btn-action" disabled>
                                 <i class="fas fa-film"></i> Detect Slides
                             </button>
@@ -809,6 +812,19 @@
         </div>
     </div>
 
+    <dialog id="contentEditorDialog" class="options-dialog" aria-labelledby="contentEditorHeading" aria-describedby="contentEditorHelp">
+        <form id="contentEditorForm">
+            <h2 id="contentEditorHeading">Edit content</h2>
+            <p id="contentEditorHelp"></p>
+            <div id="contentEditorRows"></div>
+            <p id="contentEditorError" role="status" aria-live="polite"></p>
+            <div class="dialog-actions">
+                <button id="cancelContentEditsBtn" class="btn btn-secondary" type="button">Cancel</button>
+                <button id="discardContentEditsBtn" class="btn btn-danger" type="button" hidden>Discard edits</button>
+                <button id="saveContentEditsBtn" class="btn btn-accent" type="submit">Save edits</button>
+            </div>
+        </form>
+    </dialog>
     <!-- Scripts -->
     <script src="/static/js/popup-placement.js?v=slide-downloads-20261007"></script>
     <script src="/static/js/layout-resize.js?v=slide-downloads-20261007"></script>

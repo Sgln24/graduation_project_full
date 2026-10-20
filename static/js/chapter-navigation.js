@@ -22,7 +22,7 @@ export function navigationParts(chapters = [], scenes = [], mode = 'topic') {
         const topic = topics.filter((part) => part.start <= scene.time_seconds).at(-1);
         return {
             start: Number(scene.time_seconds),
-            title: `${index + 1}${topic?.title ? `: ${topic.title}` : ''}`,
+            title: scene.title || `${index + 1}${topic?.title ? `: ${topic.title}` : ''}`,
         };
     }).filter((part) => Number.isFinite(part.start));
     // Before chapters are generated, content mode falls back to slide changes so navigation still works.

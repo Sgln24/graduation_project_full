@@ -1446,14 +1446,16 @@ class SummaryProcessor:
                     chapters = json.load(f)
                 if isinstance(chapters, list) and chapters and isinstance(chapters[0], list):
                     chapters = [item for sublist in chapters for item in sublist]
-                if self._looks_like_legacy_fallback(chapters):
+                edited = any(isinstance(chapter, dict) and chapter.get("user_edited") for chapter in chapters)
+                if not edited and self._looks_like_legacy_fallback(chapters):
                     return JSONResponse({
                         "success": True,
                         "chapters": [],
                         "exists": False,
                         "stale": True
                     })
-                chapters = self._normalize_chapters(chapters, [])
+                if not edited:
+                    chapters = self._normalize_chapters(chapters, [])
                 return JSONResponse({
                     "success": True,
                     "chapters": chapters,

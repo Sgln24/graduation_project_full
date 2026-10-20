@@ -15,6 +15,7 @@ import { initTranscriptVersions } from './transcript-versions.js';
 import { initCaptionExport } from './caption-export.js';
 import { initVttBatch } from './vtt-batch.js';
 import { openOptionsDialog } from './utils.js';
+import { initContentEditor } from './content-editor.js';
 
 // Global state
 export const state = {
@@ -475,6 +476,7 @@ function initApp() {
     initTranscriptVersions();
     initCaptionExport();
     initVttBatch(updateTranslationModelStatus);
+    initContentEditor();
     document.addEventListener('chaptersUpdated', () => void refreshSavedExports());
     bind(document.getElementById('refreshSavedExportsBtn'), 'click', refreshSavedExports);
     bind(elements.regenerateTranscriptBtn, 'click', () => regenerateTranscript());

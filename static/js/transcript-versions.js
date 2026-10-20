@@ -168,7 +168,7 @@ export async function chooseTranscriptVersion(versionId) {
             if (targetSelect) targetSelect.value = '';
         }
         loadTranscript(data.transcript);
-        if (version.kind === 'translation' && Array.isArray(data.chapters) && data.chapters.length) {
+        if (Array.isArray(data.chapters)) {
             state.videoChapters = data.chapters;
             updateChapters(data.chapters);
         } else if (version.kind === 'translation') {

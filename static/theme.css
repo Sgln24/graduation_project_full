@@ -368,6 +368,47 @@ code {
     margin-inline-start: 6px;
 }
 
+#contentEditorRows {
+    display: grid;
+    gap: 12px;
+}
+
+#contentEditorRows fieldset {
+    min-width: 0;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    padding: 10px;
+}
+
+#contentEditorRows label {
+    display: grid;
+    gap: 4px;
+    margin-block: 8px;
+}
+
+#contentEditorRows input,
+#contentEditorRows textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+}
+
+#contentEditorRows textarea {
+    resize: vertical;
+}
+
+#contentEditorError {
+    white-space: pre-wrap;
+    color: var(--err-fg);
+}
+
+#contentEditorForm > .dialog-actions {
+    position: sticky;
+    bottom: 0;
+    background: var(--surface-1);
+    padding-block: 10px;
+}
+
 .saved-caption-videos-control {
     width: 100%;
     flex-wrap: wrap;

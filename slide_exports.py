@@ -143,7 +143,9 @@ def build_slide_transcript_html(video_id, transcript, scenes_dir, images_dir, ti
         seconds = int(starts[position])
         clock = f"{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}"
         parts.extend([
-            f'<section><h2>Screenshot {position + 1} - <time>{clock}</time></h2>',
+            f'<section><h2 dir="auto">Screenshot {position + 1}'
+            + (f' - {html.escape(str(scenes[index].get("title")))}' if scenes[index].get("title") else '')
+            + f' - <time>{clock}</time></h2>',
             f'<img src="data:image/jpeg;base64,{encoded}" alt="Screenshot {position + 1} at {clock}">',
         ])
         for item in groups[position]:

@@ -230,6 +230,15 @@ These are the changes specifically described as fixes to the inherited project. 
 - **Saved Transcript Versions**: Every generated or uploaded transcript and every
   translation is kept. Pick one from the list below the Transcript options button to use it again
   (summaries and exports follow the chosen version), or delete versions you no longer need.
+- **Editable Content**: Use **Edit chapters** to correct chapter/section titles,
+  timestamps, summaries and section text; timestamps must remain ordered and sections
+  inside their chapter. Manually changed timestamps are preserved exactly in new exports.
+  **Edit slide titles** sets video-wide title overrides (leave blank to restore automatic
+  titles). **Edit transcript** corrects segment text without changing timing or speakers
+  and saves an edited version while keeping the original in the version list.
+  All editors have explicit Save/Cancel controls and warn before discarding unsaved edits.
+  Saved changes survive reloads and apply to navigation and new exports, not existing
+  export files. Reload and reopen the editor if another operation changed the content.
 - **Resizable Layout**: Drag the handles between the video, visual timeline and side
   panel to resize them; sizes are remembered and a double-click resets them.
 - **Options State**: Options buttons show a downward indicator when closed and

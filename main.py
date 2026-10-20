@@ -54,6 +54,7 @@ from transcribe import get_whisper_device_config
 from processors.embedding_processor import EmbeddingProcessor
 from processors.summary_processor import SummaryProcessor
 from processors import transcript_versions
+from content_edits import router as content_edits_router
 
 load_dotenv()
 
@@ -65,6 +66,7 @@ async def lifespan(app):
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(content_edits_router)
 
 ensure_app_directories()
 
@@ -1261,6 +1263,10 @@ def chapter_boundaries_from_topics(chapters):
         if not isinstance(chapter, dict) or "timestamp" not in chapter:
             continue
         boundary = {"timestamp": str(chapter["timestamp"]), "title": str(chapter.get("title", f"Chapter {index + 1}"))}
+        if chapter.get("timestamp_edited"):
+            boundary["timestamp_edited"] = True
+        if chapter.get("user_edited"):
+            boundary["user_edited"] = True
         if str(chapter.get("summary") or "").strip():
             boundary["summary"] = str(chapter["summary"]).strip()
         if isinstance(chapter.get("sections"), list):
@@ -1276,9 +1282,9 @@ def saved_section_points(chapter):
     """Turn sections saved with generated chapters into export key points."""
     points = []
     for section in chapter.get("sections") or []:
-        title = clean_outline_title(section.get("title"))
-        text = strip_narration(section.get("point"))
-        if not title or not text:
+        title = str(section.get("title") or "").strip() if chapter.get("user_edited") else clean_outline_title(section.get("title"))
+        text = str(section.get("point") or "").strip() if chapter.get("user_edited") else strip_narration(section.get("point"))
+        if not title or (not text and not chapter.get("user_edited")):
             return []
         try:
             start = parse_chapter_timestamp(str(section["timestamp"]))
@@ -1286,7 +1292,8 @@ def saved_section_points(chapter):
             return []
         if chapter["end"] is not None and start >= chapter["end"]:
             continue
-        points.append({"start": max(start, chapter["start"]), "title": title, "text": text})
+        points.append({"start": max(start, chapter["start"]), "title": title, "text": text,
+                       **({"timestamp_edited": True} if section.get("timestamp_edited") else {})})
     return sorted(points, key=lambda point: point["start"])
 
 
@@ -1349,6 +1356,7 @@ def chapter_boundaries_from_scenes(scenes):
             "timestamp": str(scene["timestamp"]),
             "time_seconds": float(scene.get("time_seconds", parse_chapter_timestamp(str(scene["timestamp"])))),
             "title": str(scene.get("title") or f"Slide change {index + 1}"),
+            "title_edited": bool(scene.get("title_edited")),
             "image_index": index,
             "slide_text": scene_slide_text(scene),
         }
@@ -1469,7 +1477,7 @@ def align_export_chapters(chapters, sentences):
     result = []
     for chapter in sorted(chapters, key=lambda item: parse_chapter_timestamp(item["timestamp"])):
         source_start = parse_chapter_timestamp(chapter["timestamp"])
-        start = 0 if not result else next(
+        start = source_start if chapter.get("timestamp_edited") else 0 if not result else next(
             (item["start"] for item in sentences if item["start"] >= source_start), None
         )
         if start is None:
@@ -1482,7 +1490,9 @@ def align_export_chapters(chapters, sentences):
         result.append({
             "index": len(result) + 1, "title": chapter["title"],
             "start": start, "source_start": source_start, "end": None,
-            **{key: chapter[key] for key in ("summary", "sections") if chapter.get(key)},
+            **{key: chapter[key] for key in (
+                "summary", "sections", "user_edited", "title_edited", "timestamp_edited",
+            ) if key in chapter},
         })
     for current, following in zip(result, result[1:]):
         current["end"] = following["start"]
@@ -1670,7 +1680,9 @@ def build_export_subparts(chapter, sentences, points, scenes, mode, section_titl
             source_start = entry["start"] if kind == "point" else export_slide_start(entry)
             if source_start < chapter["start"] or (chapter["end"] is not None and source_start >= chapter["end"]):
                 continue
-            start = next((item["start"] for item in sentences if item["start"] >= source_start), None)
+            start = source_start if entry.get("timestamp_edited") else next(
+                (item["start"] for item in sentences if item["start"] >= source_start), None,
+            )
             if start is None or (chapter["end"] is not None and start >= chapter["end"]):
                 # Still retain the slide event, even if it occurs during the last sentence.
                 start = sentences[-1]["start"] if sentences else chapter["start"]
@@ -1679,7 +1691,9 @@ def build_export_subparts(chapter, sentences, points, scenes, mode, section_titl
     boundaries.setdefault(chapter["start"], {"start": chapter["start"], "points": [], "slides": []})
     subparts = [boundaries[start] for start in sorted(boundaries)]
     # Opening speech belongs to the first real topic, not an invented transcript heading.
-    if mode == "points" and len(subparts) > 1 and not subparts[0]["points"] and not section_titles.get(chapter["start"]):
+    if (mode == "points" and len(subparts) > 1 and not subparts[0]["points"]
+            and not section_titles.get(chapter["start"])
+            and not any(point.get("timestamp_edited") for point in subparts[1]["points"])):
         opening = subparts.pop(0)
         subparts[0]["start"] = opening["start"]
     for index, subpart in enumerate(subparts):
@@ -2369,6 +2383,9 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
         transcript_candidates = (
             [TRANSCRIPTS_DIR / f"{video_id}_translated_{transcript_language}.json"]
             if transcript_language else []
+        ) + (
+            [TRANSCRIPTS_DIR / f"{video_id}_{options['transcript_source']}.json"]
+            if not transcript_language and options.get("transcript_source") in ("uploaded", "youtube", "whisper") else []
         ) + [
             TRANSCRIPTS_DIR / f"{video_id}_whisper.json",
             TRANSCRIPTS_DIR / f"{video_id}_youtube.json",
@@ -2553,8 +2570,8 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                         export_slide_start(scene) for scene in files["slide_subparts"]
                     ] if subpart_mode in {"slides", "both"} else []
                     ai_extras = {}
-                    saved_points = saved_section_points(chapter) if not chapter_slides else []
-                    if saved_points:
+                    saved_points = saved_section_points(chapter) if chapter.get("user_edited") or not chapter_slides else []
+                    if saved_points or chapter.get("user_edited"):
                         # Sections were already written when chapters were generated; reuse them.
                         step(f"Part {number}/{len(chapter_data)}: using the saved chapter sections")
                         points, point_method = saved_points, "Saved chapter sections"
@@ -2564,7 +2581,7 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                         points, point_method, chapter["summary"] = await export_key_points(
                             chapter_transcript, [chapter["start"], *chapter_slides], ai_extras,
                         )
-                    if ai_extras.get("title"):
+                    if ai_extras.get("title") and not chapter.get("title_edited"):
                         chapter["original_title"] = chapter["title"]
                         chapter["title"] = ai_extras["title"]
                     if subpart_mode in {"points", "both"}:

@@ -27,7 +27,9 @@ export function updateChapterCaptions() {
             title.className = 'chapter-caption';
             item.appendChild(title);
         }
-        const text = sceneTopicTitle(state.videoChapters || [], Number(image.dataset.time))
+        const customTitle = (state.videoScenes || []).find(scene =>
+            Number(scene.time_seconds) === Number(image.dataset.time))?.title;
+        const text = customTitle || sceneTopicTitle(state.videoChapters || [], Number(image.dataset.time))
             || activePart(parts, Number(image.dataset.time))?.title || 'No chapter title available.';
         // The numbered badge already identifies the slide, so show only the topic beneath it.
         const shown = conciseTitle(text.replace(/^\d+:\s*/, '').replace(/^\d+$/, ''));
@@ -36,7 +38,8 @@ export function updateChapterCaptions() {
     });
     document.querySelectorAll('.scene-item .scene-label').forEach((label) => {
         const time = Number(label.closest('.scene-item').dataset.time);
-        const title = sceneTopicTitle(state.videoChapters || [], time) || activePart(parts, time)?.title || '';
+        const customTitle = (state.videoScenes || []).find(scene => Number(scene.time_seconds) === time)?.title;
+        const title = customTitle || sceneTopicTitle(state.videoChapters || [], time) || activePart(parts, time)?.title || '';
         const name = title.replace(/^\d+:\s*/, '').replace(/^\d+$/, '');
         const text = `Scene ${label.dataset.number}` + (name ? ` - ${name}` : '');
         label.title = name;
@@ -72,7 +75,7 @@ export function syncTimelineGrouping() {
     if (slidesControl) slidesControl.hidden = mode !== 'topic' || !chapters.length || !scenes.length;
     const nestSlides = mode === 'topic' && Boolean(document.getElementById('timelineSlidesToggle')?.checked);
     const signature = JSON.stringify([
-        mode, scenes.length, showSections, nestSlides,
+        mode, scenes.map(scene => [scene.time_seconds, scene.title]), showSections, nestSlides,
         chapters.map((c) => [c.start, c.title, c.sections.map((s) => [s.start, s.title])]),
     ]);
     if (timeline.dataset.groupingSignature === signature) return;

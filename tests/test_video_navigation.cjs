@@ -40,6 +40,8 @@ state.chapterGrouping = 'topic';
 navigateChapter(1);
 assert.equal(elements.videoPlayer.currentTime, 10);
 state.chapterGrouping = 'slides';
+state.videoScenes[1].title = 'My corrected slide';
+assert.equal(navigationParts(state.videoChapters, state.videoScenes, 'slides')[1].title, 'My corrected slide');
 navigateChapter(1);
 assert.equal(elements.videoPlayer.currentTime, 20);
 state.chapterGrouping = 'combined';

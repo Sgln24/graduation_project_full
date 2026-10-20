@@ -271,6 +271,7 @@ export async function exportChapters() {
             document_title: elements.exportTitle?.value.trim() || '',
             export_filename: elements.exportFilename?.value.trim() || '',
             transcript_language: state.currentTranslationLanguage || '',
+            transcript_source: state.currentTranscriptSource || '',
             media_export_id: selectedMediaExportId(videoId),
         };
         if (options.include_screenshot_transcript) {
@@ -542,8 +543,7 @@ export function updateChapters(chapters) {
         div.appendChild(title);
         if (chapter.summary) div.title = chapter.summary;
         div.onclick = () => {
-            const [minutes, seconds] = chapter.timestamp.split(':').map(Number);
-            const time = minutes * 60 + seconds;
+            const time = timestampSeconds(chapter.timestamp);
             elements.videoPlayer.currentTime = time;
             elements.videoPlayer.play().catch((error) => {
                 if (error.name !== 'AbortError') {
@@ -560,10 +560,9 @@ export function updateChapters(chapters) {
             chaptersContainer.appendChild(sections);
         }
     });
-    attachChapterSlides();
-    
     // Store the chapters in state
     state.videoChapters = chapters;
+    attachChapterSlides();
     document.dispatchEvent(new CustomEvent('chaptersUpdated', { detail: chapters }));
     elements.exportChaptersBtn.disabled = false;
     setSummaryStatus('complete', '<i class="fas fa-check-circle"></i> Summary and chapters ready.');
@@ -674,7 +673,7 @@ function slideRow(scene, index, time) {
     timestamp.className = 'chapter-timestamp';
     timestamp.textContent = scene.timestamp || formatClock(time);
     const title = document.createElement('span');
-    title.textContent = `Slide ${index + 1}`;
+    title.textContent = scene.title || `Slide ${index + 1}`;
     item.append(timestamp, title);
     item.appendChild(createSlideDownloadButton([index], `Download slide ${index + 1}`));
     const seek = (event) => {
@@ -832,14 +831,12 @@ function addChapterMarkersWithDuration(chapters, videoPlayer, progressContainer)
         // Convert timestamp to seconds for current chapter
         console.log(chapters)
         console.log(chapters[0])
-        const [currMinutes, currSeconds] = chapters[i].timestamp.split(':').map(Number);
-        const currTimeInSeconds = currMinutes * 60 + currSeconds;
+        const currTimeInSeconds = timestampSeconds(chapters[i].timestamp);
         
         // Determine the end time of this chapter (start of next chapter or end of video)
         let endTimeInSeconds;
         if (i < chapters.length - 1) {
-            const [nextMinutes, nextSeconds] = chapters[i + 1].timestamp.split(':').map(Number);
-            endTimeInSeconds = nextMinutes * 60 + nextSeconds;
+            endTimeInSeconds = timestampSeconds(chapters[i + 1].timestamp);
         } else {
             endTimeInSeconds = duration;
         }
@@ -894,8 +891,7 @@ function addChapterMarkersWithDuration(chapters, videoPlayer, progressContainer)
     // Add each chapter marker to the timeline
     chapters.forEach((chapter, index) => {
         // Convert timestamp to seconds
-        const [minutes, seconds] = chapter.timestamp.split(':').map(Number);
-        const timeInSeconds = minutes * 60 + seconds;
+        const timeInSeconds = timestampSeconds(chapter.timestamp);
         
         // Calculate position
         const position = (timeInSeconds / duration) * 100;

@@ -29,6 +29,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SlideExportTests(unittest.TestCase):
+    def test_html_includes_escaped_custom_slide_title(self):
+        self.scenes[0]["title"] = "<Custom & title>"
+        self.save_scenes()
+        result = build_slide_transcript_html(
+            "lecture", [{"start": 0, "text": "Transcript"}],
+            scenes_dir=self.scenes_dir, images_dir=self.images_dir, title="Lecture",
+        )
+        self.assertIn("&lt;Custom &amp; title&gt;", result)
+        self.assertNotIn("<Custom & title>", result)
+
     def setUp(self):
         self.root = ROOT / (".slide-export-tests-" + uuid.uuid4().hex)
         self.root.mkdir()

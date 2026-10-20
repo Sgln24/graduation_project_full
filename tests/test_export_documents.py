@@ -135,6 +135,44 @@ class ExportDocumentTests(unittest.TestCase):
         self.assertEqual(" ".join(text for chunk in chunks for text in chunk),
                          " ".join(item["text"] for item in self.transcript))
 
+    def test_manual_chapter_and_section_timestamps_are_not_sentence_aligned(self):
+        boundaries = self.functions["chapter_boundaries_from_topics"]([
+            {"timestamp": "00:01.500", "title": "Edited", "timestamp_edited": True,
+             "sections": [{"timestamp": "00:02.500", "title": "Section", "point": "Text",
+                           "timestamp_edited": True}]},
+            {"timestamp": "00:07", "title": "Next", "timestamp_edited": True},
+        ])
+        sentences = self.functions["export_sentences"](self.transcript)
+        chapters = self.functions["align_export_chapters"](boundaries, sentences)
+        self.assertEqual([chapter["start"] for chapter in chapters], [1.5, 7])
+        points = self.functions["saved_section_points"](chapters[0])
+        parts = self.functions["build_export_subparts"](chapters[0], sentences, points, [], "points")
+        self.assertTrue(points[0]["timestamp_edited"])
+        self.assertEqual(points[0]["start"], 2.5)
+        self.assertEqual([part["start"] for part in parts], [1.5, 2.5])
+        self.assertEqual(chapters[0]["end"], 7)
+
+    def test_exports_use_selected_uploaded_transcript(self):
+        self.functions["TRANSCRIPTS_DIR"].joinpath("lecture_uploaded.json").write_text(
+            json.dumps([{"start": 0, "text": "User corrected upload."}]), encoding="utf-8",
+        )
+        response = self.run_export(include_transcripts=True, transcript_source="uploaded")
+        with zipfile.ZipFile(response.path) as archive:
+            text = "\n".join(archive.read(name).decode("utf-8") for name in archive.namelist() if name.endswith(".txt"))
+        self.assertIn("User corrected upload.", text)
+        self.assertNotIn("Neural networks learn", text)
+
+    def test_user_edited_titles_and_summaries_are_not_rewritten_for_export(self):
+        self.functions["SUMMARIES_DIR"].joinpath("lecture.json").write_text(json.dumps([
+            {"timestamp": "00:00", "title": "My exact title", "summary": "My exact summary",
+             "user_edited": True, "sections": []},
+        ]), encoding="utf-8")
+        response = self.run_export(include_outline=True)
+        document = Document(response.path)
+        text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        self.assertIn("My exact title", text)
+        self.assertIn("My exact summary", text)
+
     def test_faster_clip_exports_preserve_selected_caption_stream_mapping(self):
         self.functions["caption_copy_path"] = lambda video_id, job_id: self.directory / "captioned.mp4"
         self.run_export(include_clips=True, media_export_id="selected-copy")

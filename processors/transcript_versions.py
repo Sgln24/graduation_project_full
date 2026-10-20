@@ -94,7 +94,7 @@ def _model_label(model):
     return label or (model if ":" in model else f"Whisper {model}")
 
 
-def _describe(entry):
+def _describe_original(entry):
     if entry["kind"] == "translation":
         language = LANGUAGE_NAMES.get(entry.get("language"), str(entry.get("language", "")).upper())
         label = f"{language} translation"
@@ -112,8 +112,12 @@ def _describe(entry):
     return label
 
 
+def _describe(entry):
+    return _describe_original(entry) + (" · edited" if entry.get("edited") else "")
+
+
 def save_version(video_id, kind, segments, *, source=None, language=None, model=None,
-                 metadata=None, chapters=None, created_at=None, based_on=None):
+                 metadata=None, chapters=None, created_at=None, based_on=None, edited=False):
     """Store a transcript version; identical content updates the existing entry."""
     if kind not in {"transcript", "translation"} or not segments:
         return None
@@ -143,6 +147,8 @@ def save_version(video_id, kind, segments, *, source=None, language=None, model=
         })
         if based_on:
             entry["based_on"] = based_on
+        if edited:
+            entry["edited"] = True
         entry["label"] = _describe(entry)
         payload = {"transcript": segments}
         if metadata is not None:
@@ -292,6 +298,8 @@ def activate_version(video_id, version_id):
         if payload.get("metadata") is not None:
             _write_json(TRANSCRIPTS_DIR / f"{video_id}_whisper_meta.json", payload["metadata"])
         set_active_source(video_id, "transcript", source="whisper")
+    if entry["kind"] == "transcript" and payload.get("chapters") is not None:
+        _write_json(SUMMARIES_DIR / f"{video_id}.json", payload["chapters"])
     public = {key: value for key, value in entry.items() if key not in {"hash", "text_hash"}}
     public["label"] = _describe(entry)
     return {"version": public, "transcript": segments, "chapters": payload.get("chapters"),
