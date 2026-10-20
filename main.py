@@ -305,6 +305,8 @@ async def translate_transcript(video_id: str, request: Request):
         for index, (_, _, _, text) in enumerate(chapter_fields)
     ]
     progress_key = f"{video_id}:{target}"
+    if translation_progress.get(progress_key, {}).get("status") == "running":
+        raise HTTPException(status_code=409, detail="Translation to this language is already running.")
     translation_progress[progress_key] = {
         "status": "running",
         "completed_segments": 0,
@@ -319,17 +321,21 @@ async def translate_transcript(video_id: str, request: Request):
         }
 
     try:
-        translation = await summary_processor.translate_transcript(
-            [*transcript, *chapter_segments], target, requested_model, on_progress=on_progress,
+        from translation_checkpoint import translate_with_resume
+        translation = await translate_with_resume(
+            summary_processor, [*transcript, *chapter_segments], target, requested_model,
+            checkpoint_dir=EXPORTS_DIR / "translation-checkpoints", on_progress=on_progress,
             allow_fallback=allow_fallback,
         )
     except (RuntimeError, ValueError, asyncio.TimeoutError, json.JSONDecodeError) as error:
         translation_progress[progress_key] = {
+            **translation_progress[progress_key],
             "status": "error", "message": str(error), "updated_at": time.time(),
         }
         raise HTTPException(status_code=502, detail=str(error)) from error
     except Exception as error:
         translation_progress[progress_key] = {
+            **translation_progress[progress_key],
             "status": "error", "message": str(error), "updated_at": time.time(),
         }
         raise
@@ -380,6 +386,7 @@ async def translate_transcript(video_id: str, request: Request):
         "batch_count": translation["batch_count"],
         "elapsed_seconds": translation["elapsed_seconds"],
         "usage": translation.get("usage"),
+        "resumed_segments": translation.get("resumed_segments", 0),
     }
 
 @app.get("/transcript_versions/{video_id}")
@@ -1990,7 +1997,8 @@ async def start_vtt_translation_job(
         async def generate(video_id, options, step, artifacts, workspace):
             return await translate_vtt_batch(
                 parsed_files, target_language, model, summary_processor, workspace, step,
-                allow_fallback=allow_fallback)
+                allow_fallback=allow_fallback,
+                checkpoint_dir=export_jobs.root.parent / "translation-checkpoints")
         job_id = export_jobs.start(
             "vtt-batch", {"document_title": f"VTT translation - {len(files)} files - {target_language.upper()}"},
             generate,
@@ -2468,13 +2476,20 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                 ]
                 if chapter["end"] is not None:
                     ffmpeg_clip.extend(["-t", str(chapter["end"] - chapter["clip_start"])])
-                ffmpeg_clip.extend([*clip_stream_options, "-c:v", "libx264", "-c:a", "aac", str(clip_path)])
+                ffmpeg_clip.extend([
+                    *clip_stream_options, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                    "-c:a", "aac", str(clip_path),
+                ])
                 if export_flags["include_clips"] or export_flags["include_webpage"] or export_flags["include_scorm"]:
                     ffmpeg_clip[0] = media_executable("ffmpeg")
                     step(f"Part {number}/{len(chapter_data)}: encoding video clip with FFmpeg")
                     if chapter["clip_start"] < chapter["start"]:
                         step(f"Clip starts {chapter['start'] - chapter['clip_start']:.1f}s early to preserve speech at the boundary")
-                    subprocess.run(ffmpeg_clip, check=True)
+                    from ffmpeg_tools import encode_export_clip
+                    await encode_export_clip(
+                        ffmpeg_clip, step, f"Part {number}/{len(chapter_data)}",
+                        chapter["end"] - chapter["clip_start"] if chapter["end"] is not None else None,
+                    )
                 if export_flags["include_images"] or export_flags["include_word"] or export_flags["include_pdf"] or export_flags["include_webpage"] or export_flags["include_scorm"]:
                     prepare_export_image(
                         video_id, video_path, chapter["start"], scene_chapters,
@@ -2590,9 +2605,16 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                             ]
                             if section_end is not None:
                                 command.extend(["-t", str(max(0.1, section_end - section_start))])
-                            command.extend([*clip_stream_options, "-c:v", "libx264", "-c:a", "aac", str(section_clip)])
+                            command.extend([
+                                *clip_stream_options, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+                                "-c:a", "aac", str(section_clip),
+                            ])
                             step(f"Part {number}/{len(chapter_data)}: encoding section {number}.{subpart_index} clip")
-                            subprocess.run(command, check=True)
+                            from ffmpeg_tools import encode_export_clip
+                            await encode_export_clip(
+                                command, step, f"Section {number}.{subpart_index}",
+                                section_end - section_start if section_end is not None else None,
+                            )
                             subpart["clip"] = section_clip
                 chaptered_lines.extend([
                     f"## Part {number}: {chapter['title']}",

@@ -99,9 +99,22 @@ These are the changes specifically described as fixes to the inherited project. 
   Translation requests have a 30-second SDK timeout and no hidden SDK retries.
   Short Groq rate-limit waits (at most 15 seconds including a safety margin) get
   one retry of the same request on the same model, including with fallback disabled.
-  Longer quota waits, overload and timeout errors switch to the next configured model promptly
-  when fallback is enabled, or report an error when it is disabled. No repeated
-  minute-long quota waits. Provider limits can still prevent a translation.
+  Gemini minute-rate limits with an explicit retry delay get at most two retries
+  of the same request, each capped at 65 seconds including a one-second safety
+  margin. Gemini batches run sequentially to avoid concurrent request bursts.
+  Daily, zero-capacity, unknown and longer quota waits do not trigger these retries.
+  Exhausted retries, overload and timeout errors switch to the next configured
+  model when fallback is enabled, or report an error when it is disabled.
+  Provider limits can still prevent a translation.
+  Both transcript and VTT translation save completed fragments locally after
+  every successful response, including partial/malformed-response recovery.
+  After a failure or server restart, retrying identical input and target language
+  automatically resumes the remaining lines, even when selecting another model.
+  Changed text, timestamps, speakers, chapter fields or target language use a new
+  checkpoint. VTT retries also retain completed files until the entire ZIP is built.
+  Successful jobs clear their checkpoints. Usage totals describe the current
+  attempt, not requests made before resuming. Failed jobs from before this feature
+  was installed cannot be recovered retroactively.
   Progress shows the current file, provider/model, completed batches, retry waits and elapsed time.
   The ZIP also includes `translation-report.json` with models, fragment/item counts and
   provider-reported input/output/total tokens. Missing usage is marked unavailable
@@ -119,7 +132,8 @@ These are the changes specifically described as fixes to the inherited project. 
   and Microsoft Translator last. If no LLM is configured, Auto starts with the
   first configured translation service. Chapter generation still uses only LLMs.
   Groq has request/token
-  limits and uses small sequential batches; Gemini/OpenAI use bounded concurrency.
+  limits and uses small sequential batches; Gemini is also sequential, while
+  OpenAI uses bounded concurrency.
   **Allow model fallback** is enabled for Auto. Choosing a specific model turns
   it off; explicitly enable it to permit switching providers/models.
   Batch file/language/model settings are locked while the batch runs.
@@ -295,6 +309,13 @@ These are the changes specifically described as fixes to the inherited project. 
   open `index.html` locally. TXT/Markdown/JSON transcript files are packaged only
   when **Transcript files** is selected; other explicitly chosen formats remain
   included. Content-only, slide-only and fixed-interval grouping remain available.
+  Webpage, SCORM and video-clip exports re-encode video with H.264's `veryfast`
+  preset and CRF 23, retaining precise cuts, audio and selected caption streams.
+  Long clips can still take time; progress updates roughly every ten seconds
+  with the encoded percentage (or encoded minutes when duration is unknown).
+  This speed/compression trade-off may change file sizes compared with the
+  previous default `medium` preset. Document-only and screenshots/transcript-only
+  exports do not encode clips.
 - **Screenshots + transcript only (HTML)**: In **Export Chapters**, select this
   option after detecting slides and loading a transcript. Uncheck the other
   formats (including the default **HTML webpage**) to download a single,

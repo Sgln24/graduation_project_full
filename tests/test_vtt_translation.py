@@ -41,6 +41,43 @@ Second line
 
 
 class VttTranslationTests(unittest.TestCase):
+    def test_vtt_retry_keeps_completed_files_and_partial_fragments(self):
+        calls = []
+        fail = True
+        async def translate(segments, target, model, _done, **kwargs):
+            for index, segment in enumerate(segments):
+                identity = f"segment-{index}"
+                if identity in _done:
+                    continue
+                calls.append(segment["text"])
+                if fail and segment["text"] == "Second":
+                    raise RuntimeError("429 daily quota")
+                _done.update({identity: "translated " + segment["text"]})
+            return {"transcript": [
+                {**segment, "text": _done[f"segment-{index}"]} for index, segment in enumerate(segments)]}
+        files = [(name + ".vtt", parse_vtt(
+            f"WEBVTT\n\n00:00.000 --> 00:01.000\n{name}\n".encode(),
+        )) for name in ("First", "Second")]
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            checkpoint_dir = workspace / "checkpoints"
+            processor = SimpleNamespace(translate_transcript=translate)
+            with self.assertRaisesRegex(RuntimeError, "Second.vtt"):
+                asyncio.run(translate_vtt_batch(
+                    files, "de", "", processor, workspace, lambda _: None, checkpoint_dir=checkpoint_dir,
+                ))
+            self.assertEqual(calls, ["First", "Second"])
+            fail = False
+            calls.clear()
+            response = asyncio.run(translate_vtt_batch(
+                files, "de", "", processor, workspace, lambda _: None, checkpoint_dir=checkpoint_dir,
+            ))
+            self.assertEqual(calls, ["Second"])
+            with zipfile.ZipFile(response.path) as archive:
+                self.assertIn("translated First", archive.read("First_DE.vtt").decode())
+                self.assertIn("translated Second", archive.read("Second_DE.vtt").decode())
+            self.assertEqual(list(checkpoint_dir.iterdir()), [])
+
     def test_zip_translates_plain_fragments_without_model_controlled_markers(self):
         processor = SummaryProcessor.__new__(SummaryProcessor)
         processor.model = True
@@ -163,7 +200,7 @@ class VttTranslationTests(unittest.TestCase):
         node = next(node for node in ast.parse(source.read_text(encoding="utf-8")).body
                     if isinstance(node, ast.AsyncFunctionDef) and node.name == "start_vtt_translation_job")
         app = FastAPI()
-        store = SimpleNamespace(start=Mock(return_value="a" * 32))
+        store = SimpleNamespace(start=Mock(return_value="a" * 32), root=Path("test-exports") / "jobs")
         renderer = AsyncMock()
         processor = object()
         namespace = dict(app=app, File=File, Form=Form, UploadFile=UploadFile,
@@ -203,7 +240,7 @@ class VttTranslationTests(unittest.TestCase):
                                     files=files * 16).status_code, 400)
         with tempfile.TemporaryDirectory() as temporary:
             store = ExportJobStore(Path(temporary) / "jobs")
-            async def translate(segments, target, model, on_progress, allow_fallback=True):
+            async def translate(segments, target, model, on_progress, allow_fallback=True, _done=None):
                 return {"transcript": [{"text": item["text"].replace("Hello", "Translated")}
                                        for item in segments]}
             namespace["export_jobs"] = store

@@ -18,6 +18,7 @@ from translation_services import (
     SERVICE_MODELS, TranslationServiceError, configured_services,
     service_batches, translate_texts, character_count,
 )
+from translation_checkpoint import TranslationCheckpointError
 
 # Gemini's free-tier quotas are counted per model, so another model often
 # still has quota when the selected one is exhausted.
@@ -225,13 +226,13 @@ class SummaryProcessor:
         # Out-of-quota models stay as a last resort in case their quota has reset.
         return chain + [pair for pair in cooling if pair not in chain]
 
-    def _mark_quota_exhausted(self, provider, model):
+    def _mark_quota_exhausted(self, provider, model, cooldown=QUOTA_COOLDOWN_SECONDS):
         if not hasattr(self, "quota_exhausted_until"):
             self.quota_exhausted_until = {}
-        self.quota_exhausted_until[(provider, model)] = time.time() + QUOTA_COOLDOWN_SECONDS
+        self.quota_exhausted_until[(provider, model)] = time.time() + cooldown
         print(
             f"{PROVIDER_LABELS[provider]} {model} is out of quota; automatic selection "
-            f"skips it for {QUOTA_COOLDOWN_SECONDS // 60} minutes"
+            f"deprioritizes it for {cooldown:.0f} seconds"
         )
 
     @staticmethod
@@ -863,9 +864,9 @@ class SummaryProcessor:
         )
         # Groq's free tier counts the requested output tokens against a small
         # per-minute budget, so send smaller batches one at a time.
-        semaphore = asyncio.Semaphore(1 if provider == "groq" else TRANSLATION_CONCURRENCY)
+        semaphore = asyncio.Semaphore(1 if provider in {"groq", "gemini"} else TRANSLATION_CONCURRENCY)
         max_output_tokens = 3000 if provider == "groq" else 8192
-        attempts = 2
+        attempts = 3 if provider == "gemini" else 2
         context_lines = 4
         total_segments = len(translation_items)
         model_label = f"{PROVIDER_LABELS[provider]} {selected_model}"
@@ -991,14 +992,19 @@ class SummaryProcessor:
                                 self._short_translation_retry_delay(error)
                                 if provider == "groq" and attempt < attempts - 1 else None
                             )
+                            if provider == "gemini" and attempt < attempts - 1:
+                                rate_limit_delay = self._gemini_translation_retry_delay(error)
                             if rate_limit_delay is not None:
+                                retry_label = "once" if provider == "groq" else f"({attempt + 1}/{attempts - 1})"
                                 report(
-                                    f"{model_label}: batch {batch_number} hit a temporary token limit; "
-                                    f"retrying the same {request_label} request once in {rate_limit_delay:.1f}s"
+                                    f"{model_label}: batch {batch_number} hit a temporary rate limit; "
+                                    f"retrying the same {request_label} request {retry_label} in {rate_limit_delay:.1f}s"
                                 )
                                 await asyncio.sleep(rate_limit_delay)
                                 continue
                             if self._is_model_unavailable(error) or self._is_quota_error(error) or "timed out" in str(error).lower():
+                                break
+                            if attempt >= 1:
                                 break
                             if attempt < attempts - 1:
                                 delay = 1
@@ -1083,11 +1089,14 @@ class SummaryProcessor:
         errors = [result for result in results if isinstance(result, BaseException)]
         if errors:
             error = abort["error"] or errors[0]
+            if isinstance(error, TranslationCheckpointError):
+                raise error
             unavailable = self._is_model_unavailable(error)
             if unavailable:
                 self._mark_unavailable(provider, selected_model)
             elif self._is_quota_error(error) and "resource_exhausted" in str(error).lower():
-                self._mark_quota_exhausted(provider, selected_model)
+                delay = self._gemini_translation_retry_delay(error) if provider == "gemini" else None
+                self._mark_quota_exhausted(provider, selected_model, delay or QUOTA_COOLDOWN_SECONDS)
             malformed = (
                 isinstance(error, ValueError) and "after bounded recovery" in str(error)
             ) or "even when requested individually" in str(error)
@@ -1122,6 +1131,7 @@ class SummaryProcessor:
             str(item.get("text", "")).strip() for item in translated
         )
         if source_text and translated_joined == source_text:
+            done.clear()
             raise ValueError(
                 "Translation model returned the original text unchanged. "
                 "Choose another model or confirm that the selected target language differs from the source."
@@ -1202,10 +1212,29 @@ class SummaryProcessor:
         return batches
 
     @staticmethod
+    def _gemini_translation_retry_delay(error: Exception):
+        text = str(error).lower()
+        if (
+            "429" not in text
+            or any(marker in text for marker in ("perday", "per day", "daily", "rpd", "tpd"))
+            or not any(marker in text for marker in ("perminute", "per minute", "rpm", "tpm"))
+            or re.search(r"(?:limit|quotavalue)['\"]?\s*:\s*['\"]?0(?:\D|$)", text)
+        ):
+            return None
+        match = re.search(r"(?:try again|retry) in\s+([\d.]+)s", text)
+        if not match:
+            match = re.search(r"retrydelay['\"]?\s*:\s*['\"]([\d.]+)s", text)
+        if not match:
+            return None
+        delay = float(match.group(1)) + 1
+        return delay if 1 <= delay <= 65 else None
+
+    @staticmethod
     def _short_translation_retry_delay(error: Exception):
         text = str(error).lower()
         if (
             "429" not in text
+            or any(marker in text for marker in ("perday", "per day", "daily", "rpd", "tpd"))
             or not any(marker in text for marker in ("tokens per minute", "rate_limit_exceeded"))
             or not re.search(r"try again in\s+(?:(\d+)m)?([\d.]+)(ms|s)", text)
         ):

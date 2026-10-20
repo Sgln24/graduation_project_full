@@ -85,7 +85,9 @@ def output_filename(filename, language, used):
     return name
 
 
-async def translate_vtt_batch(files, target, model, processor, workspace, step, allow_fallback=True):
+async def translate_vtt_batch(
+    files, target, model, processor, workspace, step, allow_fallback=True, checkpoint_dir=None,
+):
     output = Path(workspace) / f"Translated_VTT_{target.upper()}.zip"
     used = set()
     reports = []
@@ -97,8 +99,15 @@ async def translate_vtt_batch(files, target, model, processor, workspace, step, 
                 step(f"File {index}/{len(files)}: {filename} - "
                      f"{update.get('message') or 'Translating'}")
             try:
-                result = await processor.translate_transcript(
-                    segments, target, model or None, on_progress=progress, allow_fallback=allow_fallback)
+                if checkpoint_dir is not None:
+                    from translation_checkpoint import translate_with_resume
+                    result = await translate_with_resume(
+                        processor, segments, target, model or None, checkpoint_dir=checkpoint_dir,
+                        on_progress=progress, allow_fallback=allow_fallback, clear_on_success=False,
+                    )
+                else:
+                    result = await processor.translate_transcript(
+                        segments, target, model or None, on_progress=progress, allow_fallback=allow_fallback)
                 content = translated_vtt(parsed, result["transcript"])
                 archive.writestr(output_filename(filename, target, used), content.encode("utf-8"))
                 reports.append({
@@ -109,6 +118,10 @@ async def translate_vtt_batch(files, target, model, processor, workspace, step, 
             except (RuntimeError, ValueError, KeyError) as error:
                 raise RuntimeError(f"Could not translate {filename}: {error}") from error
         archive.writestr("translation-report.json", json.dumps(reports, ensure_ascii=False, indent=2))
+    if checkpoint_dir is not None:
+        from translation_checkpoint import clear_translation_checkpoint
+        for _, parsed in files:
+            clear_translation_checkpoint(parsed["segments"], target, checkpoint_dir)
     models = sorted({model for report in reports for model in (
         (report.get("usage") or {}).get("models") or [f"{report.get('provider', 'Unknown')} {report.get('model', '')}"]
     )})

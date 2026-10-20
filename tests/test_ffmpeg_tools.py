@@ -1,4 +1,8 @@
 import os
+import asyncio
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -45,3 +49,54 @@ class MediaExecutableTests(unittest.TestCase):
     def test_non_windows_launch_does_not_access_windows_registry(self):
         with mock.patch.object(ffmpeg_tools.sys, "platform", "linux"):
             self.assertEqual(ffmpeg_tools._windows_install_path(), "")
+
+
+class ExportClipTests(unittest.TestCase):
+    def test_progress_failure_and_unknown_duration(self):
+        for duration in (100, None):
+            with self.subTest(duration=duration), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "clip.mp4"
+                output.write_bytes(b"video")
+                process = SimpleNamespace(
+                    stdout=SimpleNamespace(readline=mock.AsyncMock(side_effect=[
+                        b"out_time_us=50000000\n", b"out_time_us=N/A\n", b"",
+                    ])),
+                    wait=mock.AsyncMock(return_value=0), returncode=0,
+                )
+                steps = []
+                with mock.patch.object(ffmpeg_tools.asyncio, "create_subprocess_exec",
+                                       new=mock.AsyncMock(return_value=process)) as spawn, \
+                        mock.patch.object(ffmpeg_tools, "monotonic", side_effect=[0, 11, 11]):
+                    asyncio.run(ffmpeg_tools.encode_export_clip(
+                        ["ffmpeg", "-y", str(output)], steps.append, "Part 1", duration,
+                    ))
+                self.assertIn("50%" if duration else "0.8 minutes", steps[0])
+                self.assertIn("complete", steps[-1])
+                self.assertIn("-nostdin", spawn.call_args.args)
+                self.assertIn("pipe:1", spawn.call_args.args)
+
+    def test_ffmpeg_errors_and_missing_output_are_explicit(self):
+        for code in (0, 1):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
+                process = SimpleNamespace(
+                    stdout=SimpleNamespace(readline=mock.AsyncMock(return_value=b"")),
+                    wait=mock.AsyncMock(return_value=code), returncode=code,
+                )
+                with mock.patch.object(ffmpeg_tools.asyncio, "create_subprocess_exec",
+                                       new=mock.AsyncMock(return_value=process)):
+                    with self.assertRaisesRegex(RuntimeError, "did not produce" if code == 0 else "failed"):
+                        asyncio.run(ffmpeg_tools.encode_export_clip(
+                            ["ffmpeg", str(Path(directory) / "clip.mp4")], lambda _: None, "Part 1",
+                        ))
+
+    def test_cancelled_encoder_is_terminated_and_reaped(self):
+        process = SimpleNamespace(
+            stdout=SimpleNamespace(readline=mock.AsyncMock(side_effect=asyncio.CancelledError)),
+            wait=mock.AsyncMock(), returncode=None, kill=mock.Mock(),
+        )
+        with mock.patch.object(ffmpeg_tools.asyncio, "create_subprocess_exec",
+                               new=mock.AsyncMock(return_value=process)):
+            with self.assertRaises(asyncio.CancelledError):
+                asyncio.run(ffmpeg_tools.encode_export_clip(["ffmpeg", "clip.mp4"], lambda _: None, "Part 1"))
+        process.kill.assert_called_once()
+        process.wait.assert_awaited_once()

@@ -3,6 +3,7 @@ import json
 import sys
 import unittest
 import tempfile
+import time
 from pathlib import Path
 from unittest import mock
 from types import ModuleType
@@ -69,6 +70,110 @@ class CompleteFakeGeminiModels:
 
 
 class SummaryProcessorTranslationTests(unittest.TestCase):
+    def test_unchanged_output_is_not_retained_as_resumable_translation(self):
+        from translation_checkpoint import translate_with_resume
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._complete = lambda provider, model, prompt, *args: json.dumps({
+            "translations": json.loads(prompt.split("\n", 1)[1])["lines"],
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "original text unchanged"):
+                asyncio.run(translate_with_resume(
+                    processor, [{"start": 0, "text": "Hello"}], "de", "gemini-test",
+                    checkpoint_dir=directory, allow_fallback=False,
+                ))
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_failed_translation_resumes_real_engine_without_resubmitting_completed_lines(self):
+        from translation_checkpoint import translate_with_resume
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        calls = []
+        fail = True
+        def complete(provider, model, prompt, *args):
+            lines = json.loads(prompt.split("\n", 1)[1])["lines"]
+            calls.append([line["id"] for line in lines])
+            if fail and lines[0]["id"] == "segment-1":
+                raise RuntimeError("429 daily quota")
+            return json.dumps({"translations": [
+                {"id": line["id"], "text": "translated " + line["text"]} for line in lines]})
+        processor._complete = complete
+        transcript = [{"start": index, "text": "x" * 4000} for index in range(3)]
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "1/3 lines are saved"):
+                asyncio.run(translate_with_resume(
+                    processor, transcript, "de", "gemini-test", checkpoint_dir=directory,
+                    allow_fallback=False,
+                ))
+            self.assertEqual(calls, [["segment-0"], ["segment-1"]])
+            calls.clear()
+            fail = False
+            result = asyncio.run(translate_with_resume(
+                processor, transcript, "de", "gemini-test", checkpoint_dir=directory,
+                allow_fallback=False,
+            ))
+            self.assertEqual(calls, [["segment-1"], ["segment-2"]])
+            self.assertEqual(result["resumed_segments"], 1)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+    def test_gemini_minute_limit_retries_same_request_with_requested_wait(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._complete = mock.Mock(side_effect=[
+            RuntimeError("429 RESOURCE_EXHAUSTED GenerateRequestsPerMinutePerProject-FreeTier "
+                         "limit: 15 Please retry in 24.973435797s."),
+            '{"translations":[{"id":"segment-0","text":"Hallo"}]}',
+        ])
+        with mock.patch("processors.summary_processor.asyncio.sleep", new=mock.AsyncMock()) as sleep:
+            result = asyncio.run(processor.translate_transcript(
+                [{"start": 0, "text": "Hello"}], "de", "gemini-test", allow_fallback=False,
+            ))
+        sleep.assert_awaited_once_with(25.973435797)
+        self.assertEqual(processor._complete.call_args_list[0], processor._complete.call_args_list[1])
+        self.assertEqual(result["transcript"][0]["text"], "Hallo")
+
+    def test_gemini_minute_limit_is_bounded_and_falls_back_with_completed_fragments(self):
+        processor = self._gemini_processor(CompleteFakeGeminiModels())
+        processor._provider_chain = lambda *args, **kwargs: [
+            ("gemini", "gemini-test"), ("openai", "gpt-test")]
+        calls = []
+        def complete(provider, model, prompt, *args):
+            lines = json.loads(prompt.split("\n", 1)[1])["lines"]
+            calls.append((provider, [item["id"] for item in lines]))
+            if provider == "gemini" and lines[0]["id"] != "segment-0":
+                raise RuntimeError("429 RESOURCE_EXHAUSTED requests per minute. Please retry in 25s")
+            return json.dumps({"translations": [
+                {"id": item["id"], "text": "translated " + item["text"]} for item in lines]})
+        processor._complete = complete
+        transcript = [{"start": index, "text": "x" * 4000} for index in range(3)]
+        with mock.patch("processors.summary_processor.asyncio.sleep", new=mock.AsyncMock()) as sleep:
+            result = asyncio.run(processor.translate_transcript(transcript, "de"))
+        self.assertEqual(sleep.await_count, 2)
+        self.assertEqual(calls, [
+            ("gemini", ["segment-0"]), ("gemini", ["segment-1"]),
+            ("gemini", ["segment-1"]), ("gemini", ["segment-1"]),
+            ("openai", ["segment-1"]), ("openai", ["segment-2"]),
+        ])
+        self.assertEqual(len(result["transcript"]), 3)
+        remaining_cooldown = processor.quota_exhausted_until[("gemini", "gemini-test")] - time.time()
+        self.assertGreater(remaining_cooldown, 20)
+        self.assertLessEqual(remaining_cooldown, 26)
+
+    def test_gemini_retry_rejects_daily_zero_unknown_and_long_quotas(self):
+        for message in (
+            "429 RequestsPerDay Please retry in 25s",
+            "429 RequestsPerMinute RequestsPerDay Please retry in 25s",
+            "429 requests per minute daily quota Please retry in 25s",
+            "429 requests per minute limit: 0 Please retry in 25s",
+            "429 requests per minute 'quotaValue': '0' Please retry in 25s",
+            "429 requests per minute Please retry in 100s",
+            "429 requests per minute",
+            "429 quota exhausted Please retry in 25s",
+            "503 requests per minute Please retry in 25s",
+        ):
+            with self.subTest(message=message):
+                self.assertIsNone(SummaryProcessor._gemini_translation_retry_delay(RuntimeError(message)))
+        self.assertEqual(SummaryProcessor._gemini_translation_retry_delay(
+            RuntimeError("429 TokensPerMinute 'retryDelay': '24s'")), 25)
+
     def test_translation_catalog_excludes_unavailable_groq_llama(self):
         processor = self._gemini_processor(CompleteFakeGeminiModels())
         processor.groq_client = object()

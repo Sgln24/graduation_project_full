@@ -109,10 +109,16 @@ class ExportDocumentTests(unittest.TestCase):
             if target.suffix == ".jpg":
                 PillowImage.new("RGB", (32, 18), "white").save(target)
             else:
+                if target.suffix == ".mp4":
+                    self.assertEqual(command[command.index("-preset") + 1], "veryfast")
+                    self.assertEqual(command[command.index("-crf") + 1], "23")
                 target.write_bytes(b"test video")
             return SimpleNamespace(returncode=0)
 
-        with mock.patch.object(subprocess, "run", side_effect=run_media):
+        async def encode_clip(command, step, label, duration=None):
+            run_media(command)
+        with mock.patch.object(subprocess, "run", side_effect=run_media), \
+                mock.patch("ffmpeg_tools.encode_export_clip", side_effect=encode_clip):
             return asyncio.run(self.functions["export_chapters"]("lecture", SimpleNamespace(json=request_json)))
 
     def test_sentence_alignment_preserves_every_word_once(self):
@@ -128,6 +134,16 @@ class ExportDocumentTests(unittest.TestCase):
                    and (part["end"] is None or item["start"] < part["end"])] for part in chapters]
         self.assertEqual(" ".join(text for chunk in chunks for text in chunk),
                          " ".join(item["text"] for item in self.transcript))
+
+    def test_faster_clip_exports_preserve_selected_caption_stream_mapping(self):
+        self.functions["caption_copy_path"] = lambda video_id, job_id: self.directory / "captioned.mp4"
+        self.run_export(include_clips=True, media_export_id="selected-copy")
+        commands = [command for command in self.media_commands if command[-1].endswith(".mp4")]
+        self.assertTrue(commands)
+        for command in commands:
+            self.assertIn("0:s?", command)
+            self.assertEqual(command[command.index("-c:s") + 1], "mov_text")
+            self.assertEqual(command[command.index("-i") + 1], str(self.directory / "captioned.mp4"))
 
     def create_detected_images(self):
         directory = self.functions["FULLSIZE_IMAGES_DIR"] / "lecture"
