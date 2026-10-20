@@ -65,6 +65,10 @@ class ChapterProjectTests(unittest.TestCase):
             self.commands.append(command)
             Path(command[-1]).write_bytes(b"encoded chapter")
         self.encode = encode
+        self.real_extract = chapter_projects.extract_caption_tracks
+        patch = mock.patch.object(chapter_projects, "extract_caption_tracks", new=mock.AsyncMock(return_value=[]))
+        patch.start()
+        self.addCleanup(patch.stop)
         app = FastAPI()
         app.include_router(chapter_projects.router)
         self.app = app
@@ -124,6 +128,53 @@ class ChapterProjectTests(unittest.TestCase):
         slides = self.read(self.SCENES_DIR / "child.json")
         self.assertEqual([scene["title"] for scene in slides], ["Outside"])
 
+    def test_caption_copy_is_the_project_source_and_subtitle_streams_are_preserved(self):
+        store = ExportJobStore(self.root / "exports" / "jobs")
+        job = "b" * 32
+        store._write(job, {"id": job, "video_id": "parent", "instance": store.instance, "status": "complete",
+                          "created_at": 1, "title": "Captioned video - English",
+                          "filename": "English.mp4", "download_file": "download.mp4"})
+        captioned = store._directory(job) / "download.mp4"
+        captioned.write_bytes(b"captioned copy")
+        with mock.patch.object(chapter_projects, "EXPORTS_DIR", self.root / "exports"):
+            snapshot = chapter_projects._snapshot("parent", {**self.data, "media_export_id": job})
+            self.assertEqual(snapshot["video_path"], captioned)
+            self.create({**self.data, "media_export_id": job})
+        self.assertIn(str(captioned), self.commands[0])
+        self.assertIn("0:s?", self.commands[0])
+        self.assertIn("mov_text", self.commands[0])
+        self.assertEqual(chapter_projects.chapter_captions("child")["tracks"], [])
+        with mock.patch.object(chapter_projects, "EXPORTS_DIR", self.root / "exports"):
+            state = store.read(job)
+            state["video_id"] = "unrelated"
+            store._write(job, state)
+            with self.assertRaises(chapter_projects.HTTPException):
+                chapter_projects._snapshot("parent", {**self.data, "media_export_id": job})
+
+    def test_cancellation_stops_encoder_and_cleans_pending_video(self):
+        async def exercise():
+            started = asyncio.Event()
+            async def encode(command, step, label, duration):
+                Path(command[-1]).write_bytes(b"incomplete")
+                started.set()
+                await asyncio.Event().wait()
+            class Request:
+                async def json(inner):
+                    return self.data
+            with mock.patch.object(chapter_projects, "video_duration", new=mock.AsyncMock(return_value=10)), \
+                    mock.patch.object(chapter_projects, "encode_export_clip", side_effect=encode), \
+                    mock.patch.object(chapter_projects, "media_executable", return_value="ffmpeg"):
+                response = await chapter_projects.start_chapter_project("parent", Request())
+                await started.wait()
+                job = response["job_id"]
+                task = chapter_projects._active_jobs[job][0]
+                self.assertEqual((await chapter_projects.cancel_chapter_project(job))["status"], "cancelling")
+                await task
+                self.assertEqual(chapter_projects.chapter_project_status(job)["status"], "cancelled")
+                self.assertEqual(list(self.VIDEO_DIR.glob("*.pending")), [])
+                self.assertTrue((self.VIDEO_DIR / "parent.mp4").exists())
+        asyncio.run(exercise())
+
     def test_active_translation_and_original_language_both_survive(self):
         translated = [{**item, "text": "Translated " + item["text"]} for item in self.transcript]
         self.write(self.TRANSCRIPTS_DIR / "parent_translated_de.json", translated)
@@ -156,7 +207,8 @@ class ChapterProjectTests(unittest.TestCase):
     def test_invalid_or_stale_requests_rejected(self):
         with TestClient(self.app) as client:
             for data in ({**self.data, "chapter_index": True}, {**self.data, "language": []},
-                         {**self.data, "source": "../etc"}, {**self.data, "chapter_index": -1}):
+                         {**self.data, "source": "../etc"}, {**self.data, "chapter_index": -1},
+                         *({**self.data, "caption_track_index": value} for value in (True, -1, 32, "1"))):
                 self.assertEqual(client.post("/chapter_projects/parent", json=data).status_code, 400)
             for data in ({**self.data, "timestamp": "00:01"}, {**self.data, "title": "Old title"},
                          {**self.data, "next_timestamp": "00:07"}, {**self.data, "chapter_index": 9}):
@@ -216,6 +268,63 @@ class ChapterProjectTests(unittest.TestCase):
             "-of", "json", str(output),
         ], check=True, capture_output=True, text=True)
         self.assertEqual({stream["codec_name"] for stream in json.loads(probe.stdout)["streams"]}, {"h264", "aac"})
+
+    def test_real_nested_projects_keep_english_captions_and_browser_tracks(self):
+        from ffmpeg_tools import media_executable
+        source = self.VIDEO_DIR / "parent.mp4"
+        plain = self.root / "plain.mp4"
+        subtitles = self.root / "english.srt"
+        subtitles.write_text("1\n00:00:01,000 --> 00:00:08,000\nEnglish captions stay visible.\n", encoding="utf-8")
+        german = self.root / "german.srt"
+        german.write_text("1\n00:00:01,000 --> 00:00:08,000\nDeutsche Untertitel.\n", encoding="utf-8")
+        subprocess.run([media_executable("ffmpeg"), "-v", "error", "-y", "-f", "lavfi",
+                        "-i", "color=c=blue:s=160x90:r=12:d=10", "-c:v", "libx264", str(plain)],
+                       check=True, capture_output=True)
+        subprocess.run([media_executable("ffmpeg"), "-v", "error", "-y", "-i", str(plain),
+                        "-i", str(german), "-i", str(subtitles),
+                        "-map", "0:v", "-map", "1:0", "-map", "2:0", "-c:v", "copy", "-c:s", "mov_text",
+                        "-metadata:s:s:0", "language=deu", "-metadata:s:s:1", "language=eng", str(source)],
+                       check=True, capture_output=True)
+        with mock.patch.object(chapter_projects, "extract_caption_tracks", new=self.real_extract):
+            snapshot = chapter_projects._snapshot("parent", {**self.data, "caption_track_index": 1})
+            asyncio.run(chapter_projects.create_project(snapshot, "child", lambda _: None))
+            tracks = chapter_projects.chapter_captions("child")["tracks"]
+            self.assertEqual([track["language"] for track in tracks], ["deu", "eng"])
+            self.assertEqual([track["default"] for track in tracks], [False, True])
+            self.assertIn("English captions stay visible", (self.TRANSCRIPTS_DIR / "child_caption_1.vtt").read_text())
+            self.write(self.SUMMARIES_DIR / "child.json", [{"timestamp": "00:01", "title": "Nested"}])
+            nested = chapter_projects._snapshot("child", {
+                "chapter_index": 0, "timestamp": "00:01", "title": "Nested", "next_timestamp": None,
+            })
+            asyncio.run(chapter_projects.create_project(nested, "grandchild", lambda _: None))
+            tracks = chapter_projects.chapter_captions("grandchild")["tracks"]
+            self.assertEqual([track["default"] for track in tracks], [False, True])
+            self.assertEqual(tracks[1]["language"], "eng")
+            text = (self.TRANSCRIPTS_DIR / "grandchild_caption_1.vtt").read_text()
+            self.assertIn("English captions stay visible", text)
+            self.assertIn("00:00.000", text)
+            self.assertAlmostEqual(asyncio.run(chapter_projects.video_duration(self.VIDEO_DIR / "grandchild.mp4")), 3, delta=.15)
+
+    def test_single_chapter_video_download_is_an_mp4_not_a_project(self):
+        captured = {}
+        def start(video_id, options, generate):
+            captured["generate"] = generate
+            return "d" * 32
+        class Request:
+            async def json(inner):
+                return self.data
+        with mock.patch.object(chapter_projects.video_jobs, "start", side_effect=start):
+            result = asyncio.run(chapter_projects.start_chapter_video("parent", Request()))
+        self.assertEqual(result["job_id"], "d" * 32)
+        workspace = self.root / "download"
+        workspace.mkdir()
+        with mock.patch.object(chapter_projects, "video_duration", new=mock.AsyncMock(return_value=10)), \
+                mock.patch.object(chapter_projects, "encode_export_clip", side_effect=self.encode), \
+                mock.patch.object(chapter_projects, "media_executable", return_value="ffmpeg"):
+            response = asyncio.run(captured["generate"]("parent", {}, lambda _: None, None, workspace))
+        self.assertEqual(Path(response.path).suffix, ".mp4")
+        self.assertEqual(Path(response.path).read_bytes(), b"encoded chapter")
+        self.assertFalse((self.VIDEO_DIR / "metadata.json").exists(), "A download must not create another upload")
 
 
 if __name__ == "__main__":

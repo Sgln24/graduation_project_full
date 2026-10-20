@@ -3,6 +3,49 @@ import { showError } from './ui.js';
 import { saveBlobToUserLocation } from './utils.js';
 import { startElapsedTimer } from './progress-time.js';
 import { contentLanguage } from './content-languages.js';
+import { slideTitle, sceneTopicTitle } from './chapter-navigation.js';
+
+function shortFilename(value) {
+    return String(value || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+        .replace(/\s+/g, '_').replace(/^[._-]+|[._-]+$/g, '').slice(0, 60);
+}
+
+export function slideDownloadFilename(index) {
+    const scene = state.videoScenes?.[index] || {};
+    const title = slideTitle(scene, contentLanguage(state.currentVideoId, 'slides', state.currentTranslationLanguage))
+        || sceneTopicTitle(state.videoChapters || [], Number(scene.time_seconds));
+    const description = shortFilename(title);
+    return `Slide_${String(index + 1).padStart(3, '0')}${description ? '_' + description : ''}.jpg`;
+}
+
+export function initFrameScreenshot() {
+    const button = document.getElementById('takeScreenshotBtn');
+    const player = document.getElementById('videoPlayer');
+    const refresh = () => { button.disabled = player.readyState < 2 || !player.videoWidth; };
+    for (const event of ['loadeddata', 'canplay', 'emptied']) player.addEventListener(event, refresh);
+    refresh();
+    button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+            if (player.readyState < 2 || !player.videoWidth) throw new Error('Wait for a video frame to load.');
+            const time = player.currentTime;
+            const clock = [Math.floor(time / 3600), Math.floor(time / 60) % 60, Math.floor(time) % 60]
+                .map(value => String(value).padStart(2, '0')).join('-');
+            const title = shortFilename(sceneTopicTitle(state.videoChapters || [], time));
+            const canvas = document.createElement('canvas');
+            canvas.width = player.videoWidth;
+            canvas.height = player.videoHeight;
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error('Screenshot capture is unavailable in this browser.');
+            context.drawImage(player, 0, 0);
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            if (!blob) throw new Error('Could not create a screenshot from this video frame.');
+            await saveBlobToUserLocation(blob, `Screenshot_${clock}${title ? '_' + title : ''}.png`);
+        } catch (error) {
+            if (error.name !== 'AbortError') showError(`Could not take screenshot: ${error.message}`);
+        } finally { refresh(); }
+    });
+}
 
 export function screenshotArchiveFilename() {
     const stem = (state.currentVideoFilename || 'lecture').replace(/\.[^.]+$/, '')
@@ -40,6 +83,7 @@ async function saveSlideExport(url, filename, button, options) {
 
 export function createSlideDownloadButton(indices, label, {archive = false, videoId = state.currentVideoId} = {}) {
     const archiveFilename = screenshotArchiveFilename();
+    const singleFilename = slideDownloadFilename(indices[0]);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'btn btn-secondary btn-action btn-icon slide-download';
@@ -59,7 +103,7 @@ export function createSlideDownloadButton(indices, label, {archive = false, vide
         const base = encodeURIComponent(videoId);
         if (indices.length === 1 && !archive) {
             void saveSlideExport(`/download_slide/${base}/${indices[0]}`,
-                `${videoId}_slide_${indices[0] + 1}.jpg`, button);
+                singleFilename, button);
         } else {
             void saveSlideExport(`/download_slides/${base}`, archiveFilename, button, {
                 method: 'POST',

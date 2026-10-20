@@ -9,8 +9,10 @@ import shutil
 import threading
 import time
 import uuid
+import subprocess
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from caption_exports import video_duration
 from export_jobs import ExportJobStore, cleanup_export_workspace
 from ffmpeg_tools import encode_export_clip, media_executable
@@ -27,6 +29,34 @@ logger = logging.getLogger(__name__)
 jobs = ExportJobStore(EXPORTS_DIR / "chapter-project-jobs")
 _metadata_lock = threading.Lock()
 _tasks = set()
+_active_jobs = {}
+video_jobs = ExportJobStore(EXPORTS_DIR / "chapter-video-jobs")
+
+
+async def extract_caption_tracks(video_path, project_id):
+    probe = await asyncio.to_thread(
+        subprocess.run, [media_executable("ffprobe"), "-v", "error", "-select_streams", "s",
+                         "-show_entries", "stream=index:stream_tags=language,title:stream_disposition=default",
+                         "-of", "json", str(video_path)],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if probe.returncode:
+        raise RuntimeError(f"Could not inspect chapter captions: {probe.stderr[-2000:]}")
+    tracks = []
+    for index, stream in enumerate(json.loads(probe.stdout).get("streams", [])):
+        path = TRANSCRIPTS_DIR / f"{project_id}_caption_{index}.vtt"
+        result = await asyncio.to_thread(
+            subprocess.run, [media_executable("ffmpeg"), "-nostdin", "-y", "-v", "error",
+                             "-i", str(video_path), "-map", f"0:{stream['index']}", str(path)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if result.returncode:
+            raise RuntimeError(f"Could not preserve chapter captions: {result.stderr[-2000:]}")
+        tags = stream.get("tags", {})
+        tracks.append({"label": tags.get("title") or tags.get("language") or f"Captions {index + 1}",
+                       "language": tags.get("language", "und"), "index": index,
+                       "default": bool(stream.get("disposition", {}).get("default"))})
+    return tracks
 
 def save_video_metadata(video_id, entry):
     with _metadata_lock:
@@ -122,6 +152,9 @@ def _snapshot(video_id, data):
     if not isinstance(data, dict):
         raise HTTPException(400, "Chapter project settings must be an object.")
     index = data.get("chapter_index")
+    caption_index = data.get("caption_track_index")
+    if caption_index is not None and (type(caption_index) is not int or not 0 <= caption_index < 32):
+        raise HTTPException(400, "Invalid caption track selection.")
     language, source = data.get("language", ""), data.get("source", "whisper")
     if (type(index) is not int or index < 0 or not isinstance(language, str)
             or language not in ("", "en", "de", "ar", "pl")
@@ -146,6 +179,21 @@ def _snapshot(video_id, data):
     videos = [path for path in VIDEO_DIR.glob(f"{video_id}.*") if path.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov", ".avi")]
     if not videos:
         raise HTTPException(404, "Source video not found.")
+    source_path = videos[0]
+    media_id = data.get("media_export_id")
+    if media_id:
+        if not isinstance(media_id, str):
+            raise HTTPException(400, "Invalid caption video ID.")
+        store = ExportJobStore(EXPORTS_DIR / "jobs")
+        try:
+            copy_job = store.read(media_id)
+            if (copy_job["video_id"] != video_id or copy_job["status"] != "complete"
+                    or not copy_job["title"].startswith("Captioned video - ")
+                    or not copy_job.get("filename", "").lower().endswith(".mp4")):
+                raise HTTPException(400, "Choose a completed caption copy of this video.")
+            source_path = store.file(media_id, copy_job["download_file"])
+        except (ValueError, FileNotFoundError, KeyError) as error:
+            raise HTTPException(404, "The selected captioned video is missing.") from error
     transcript_path = TRANSCRIPTS_DIR / (
         f"{video_id}_translated_{language}.json" if language else f"{video_id}_{source}.json"
     )
@@ -175,10 +223,16 @@ def _snapshot(video_id, data):
     metadata = _read(TRANSCRIPTS_DIR / f"{video_id}_whisper_meta.json", {})
     baseline = _read(TRANSCRIPTS_DIR / f"{video_id}_whisper.json", []) if language else transcript
     return {
-        "video_id": video_id, "video_path": videos[0], "start": start, "end": end,
+        "video_id": video_id, "video_path": source_path, "start": start, "end": end,
         "title": chapter["title"], "transcript": transcript, "language": language,
         "source": source, "scenes": scenes, "metadata": metadata, "baseline": baseline or transcript,
+        "caption_track_index": caption_index,
     }
+
+
+def caption_disposition(snapshot):
+    index = snapshot.get("caption_track_index")
+    return ["-disposition:s", "0", f"-disposition:s:{index}", "default"] if index is not None else []
 
 
 async def create_project(snapshot, project_id, step):
@@ -196,12 +250,15 @@ async def create_project(snapshot, project_id, step):
         command = [
             media_executable("ffmpeg"), "-y", "-hide_banner", "-loglevel", "error",
             "-ss", str(start), "-i", str(snapshot["video_path"]), "-t", str(end - start),
-            "-map", "0:v:0", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast",
-            "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", "-f", "mp4", str(video_path),
+            "-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-c:s", "mov_text",
+            "-c:v", "libx264", "-preset", "veryfast",
+            "-crf", "23", "-c:a", "aac", *caption_disposition(snapshot),
+            "-movflags", "+faststart", "-f", "mp4", str(video_path),
         ]
         step("Creating an independent chapter video")
         await encode_export_clip(command, step, "Chapter project", end - start)
         step("Copying transcript, speakers and available slides")
+        caption_tracks = await extract_caption_tracks(video_path, project_id)
         transcript = clip_transcript(snapshot["transcript"], start, end)
         baseline = clip_transcript(snapshot["baseline"], start, end)
         scenes = await asyncio.to_thread(
@@ -231,7 +288,8 @@ async def create_project(snapshot, project_id, step):
         filename = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", snapshot["title"]).strip(" .")[:100] or "Chapter"
         filename += ".mp4"
         video_path.replace(published_path)
-        save_video_metadata(project_id, {"filename": filename, "chapter_project": provenance})
+        save_video_metadata(project_id, {"filename": filename, "chapter_project": provenance,
+                                         "caption_tracks": caption_tracks})
         committed = True
         return {"video_id": project_id, "filename": filename, "duration": end - start,
                 "transcript_segments": len(transcript), "slides": len(scenes)}
@@ -261,28 +319,128 @@ async def start_chapter_project(video_id: str, request: Request):
     }
 
     def step(message):
+        if message == "Copying transcript, speakers and available slides":
+            state["phase"] = "finalizing"
         state["steps"].append({"elapsed": round(time.time() - state["created_at"], 1), "message": str(message)})
         jobs._write(job_id, state)
 
     async def work():
         try:
+            if state.get("cancel_requested"):
+                raise asyncio.CancelledError()
             state["status"] = "running"
+            state["phase"] = "encoding"
             step("Chapter project queued for encoding")
             state["project"] = await create_project(snapshot, project_id, step)
             state["status"] = "complete"
             step("Chapter project ready")
+        except asyncio.CancelledError:
+            state["status"] = "cancelled"
+            step("Chapter project cancelled; incomplete output removed")
         except Exception as error:
             logger.exception("Chapter project creation failed")
             state["status"], state["error"] = "error", str(error)
         finally:
             state["finished_at"] = time.time()
             jobs._write(job_id, state)
+            _active_jobs.pop(job_id, None)
 
     jobs._write(job_id, state)
     task = asyncio.create_task(work())
     _tasks.add(task)
+    _active_jobs[job_id] = (task, state)
     task.add_done_callback(_tasks.discard)
     return {"job_id": job_id}
+
+
+@router.post("/chapter_project_jobs/{job_id}/cancel")
+async def cancel_chapter_project(job_id: str):
+    current = _active_jobs.get(job_id)
+    if not current:
+        state = chapter_project_status(job_id)
+        if state["status"] == "cancelled":
+            return {"status": "cancelled"}
+        raise HTTPException(409, "This chapter project is no longer encoding.")
+    task, state = current
+    if state.get("cancel_requested"):
+        return {"status": "cancelling"}
+    if state.get("phase") == "finalizing":
+        raise HTTPException(409, "Encoding has finished and the project is being saved. It can no longer be cancelled.")
+    state["cancel_requested"] = True
+    # A queued task must enter its try/finally before it can be cancelled.
+    if state["status"] == "running":
+        task.cancel()
+    return {"status": "cancelling"}
+
+
+@router.post("/chapter_video/{video_id}")
+async def start_chapter_video(video_id: str, request: Request):
+    try:
+        snapshot = _snapshot(video_id, await request.json())
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise HTTPException(400, f"Could not read chapter video: {error}") from error
+
+    async def generate(parent, options, step, artifacts, workspace):
+        duration = await video_duration(snapshot["video_path"])
+        start = snapshot["start"]
+        end = snapshot["end"] if snapshot["end"] is not None else duration
+        if not 0 <= start < end <= duration + 0.1:
+            raise ValueError("Chapter timestamps are outside the source video's duration.")
+        end = min(end, duration)
+        filename = re.sub(r'[^A-Za-z0-9_-]+', "_", snapshot["title"]).strip("_")[:100] or "Chapter"
+        target = workspace / f"{filename}.mp4"
+        command = [
+            media_executable("ffmpeg"), "-y", "-hide_banner", "-loglevel", "error",
+            "-ss", str(start), "-i", str(snapshot["video_path"]), "-t", str(end - start),
+            "-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-c:s", "mov_text",
+            "-c:v", "libx264", "-preset", "veryfast",
+            "-crf", "23", "-c:a", "aac", *caption_disposition(snapshot), "-movflags", "+faststart", str(target),
+        ]
+        await encode_export_clip(command, step, "Chapter video", end - start)
+        return FileResponse(target)
+
+    job_id = video_jobs.start(video_id, {"document_title": snapshot["title"]}, generate)
+    return {"job_id": job_id}
+
+
+@router.get("/chapter_video_jobs/{job_id}")
+def chapter_video_status(job_id: str):
+    try:
+        state = video_jobs.read(job_id)
+        if state["status"] == "complete":
+            state["download_url"] = f"/chapter_video_jobs/{job_id}/download"
+        return state
+    except (ValueError, FileNotFoundError) as error:
+        raise HTTPException(404, "Chapter video not found.") from error
+
+
+@router.get("/chapter_video_jobs/{job_id}/download")
+def download_chapter_video(job_id: str):
+    state = chapter_video_status(job_id)
+    if state["status"] != "complete":
+        raise HTTPException(409, "Chapter video is not ready.")
+    return FileResponse(video_jobs.file(job_id, state["download_file"]), media_type="video/mp4",
+                        filename=state["filename"])
+
+
+@router.get("/chapter_captions/{video_id}")
+def chapter_captions(video_id: str):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", video_id):
+        raise HTTPException(400, "Invalid video ID.")
+    metadata = _read(VIDEO_DIR / "metadata.json", {}).get(video_id, {})
+    return {"tracks": [{**track, "url": f"/chapter_captions/{video_id}/{track['index']}"}
+                       for track in metadata.get("caption_tracks", [])]}
+
+
+@router.get("/chapter_captions/{video_id}/{index}")
+def chapter_caption_file(video_id: str, index: int):
+    tracks = chapter_captions(video_id)["tracks"]
+    if not 0 <= index < len(tracks):
+        raise HTTPException(404, "Caption track not found.")
+    path = TRANSCRIPTS_DIR / f"{video_id}_caption_{index}.vtt"
+    if not path.is_file():
+        raise HTTPException(404, "Caption track is missing.")
+    return FileResponse(path, media_type="text/vtt")
 
 
 @router.get("/chapter_project_jobs/{job_id}")

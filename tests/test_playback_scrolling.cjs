@@ -6,6 +6,7 @@ const read = (name) => fs.readFileSync(path.join(__dirname, '..', 'static', 'js'
     .replace(/^import .*;\r?$/gm, '').replace(/^export /gm, '');
 const scrolls = [];
 const container = {
+    classList: {contains() { return false; }},
     scrollTop: 100, scrollLeft: 20, clientHeight: 300, clientWidth: 200,
     getBoundingClientRect: () => ({top: 200, bottom: 500, left: 0, right: 200}),
     scrollTo: (options) => scrolls.push(options),

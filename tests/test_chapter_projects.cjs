@@ -16,7 +16,9 @@ function fixture() {
     function element() {
         return {
             options: [], hidden: false, dataset: {}, listeners: {},
+            closest() { return null; },
             appendChild(child) { this.options.push(child); },
+            setAttribute(name, value) { this[name] = value; },
             addEventListener(name, handler) { this.listeners[name] = handler; },
             click() { return this.listeners.click({stopPropagation() {}}); },
         };
@@ -26,6 +28,8 @@ function fixture() {
     const context = vm.createContext({
         state,
         contentLanguage: (_, __, language) => language || '',
+        selectedMediaExportId: () => 'caption-copy',
+        selectedCaptionTrackIndex: () => 1,
         document: {getElementById: id => ids[id], createElement: element},
         localStorage: {getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value),
             removeItem: key => storage.delete(key)},
@@ -49,6 +53,10 @@ const chapters = [{timestamp: '00:00', title: 'First'}, {timestamp: '01:00', tit
 
 (async () => {
     const first = fixture();
+    const download = first.context.createChapterDownloadButton(chapters[0], 0, chapters);
+    assert.equal(download.title, 'Download chapter video');
+    assert.equal(download['aria-label'], 'Download chapter video');
+    assert(!download.textContent?.includes('Download chapter video'), 'Keep the visible control icon-only');
     const button = first.context.createChapterProjectButton(chapters[0], 0, chapters);
     let stopped = false;
     await button.listeners.click({stopPropagation() { stopped = true; }});
@@ -58,6 +66,8 @@ const chapters = [{timestamp: '00:00', title: 'First'}, {timestamp: '01:00', tit
     assert.equal(payload.timestamp, '00:00');
     assert.equal(payload.next_timestamp, '01:00');
     assert.equal(payload.language, 'de');
+    assert.equal(payload.media_export_id, 'caption-copy', 'Chapter projects use the media currently open');
+    assert.equal(payload.caption_track_index, 1, 'Preserve the visible caption track as the default');
     assert.equal(first.requests[0].url, '/chapter_projects/parent');
     assert.match(first.ids.chapterProjectStatus.textContent, /Encoding/);
     assert.equal(first.storage.size, 1, 'Keep job id across reloads');

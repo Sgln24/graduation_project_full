@@ -65,12 +65,25 @@
             <details id="extraOptionsMenu" class="extra-options">
                 <summary class="btn btn-secondary">Extra options</summary>
                 <div class="extra-options-menu">
+                    <button id="manageLibraryBtn" class="btn btn-secondary btn-options" type="button">Manage saved files</button>
                     <button id="openVttBatchBtn" class="btn btn-secondary btn-options" type="button">Translate VTT files</button>
                     <button id="settingsBtn" class="btn btn-secondary btn-options" type="button" aria-label="Settings" title="Settings">
                         <i class="fas fa-cog"></i> Settings
                     </button>
                 </div>
             </details>
+            <dialog id="libraryDialog" class="options-dialog" aria-labelledby="libraryHeading">
+                <form method="dialog">
+                    <div class="dialog-header">
+                        <h2 id="libraryHeading">Manage saved files</h2>
+                        <button class="dialog-close" type="submit" aria-label="Close saved files">&times;</button>
+                    </div>
+                    <label><input id="deleteUploadExports" type="checkbox"> Also delete exports when deleting an upload</label>
+                    <p>Unchecked keeps completed exports. Independent chapter projects are always kept.</p>
+                    <p id="libraryStatus" role="status"></p>
+                    <div id="libraryItems"></div>
+                </form>
+            </dialog>
             <dialog id="vttBatchDialog" class="options-dialog" aria-labelledby="vttBatchHeading">
                 <form method="dialog">
                     <div class="dialog-header">
@@ -142,6 +155,7 @@
                     <button id="nextChapterBtn" class="btn btn-secondary" type="button" title="Next chapter">
                         Next <i class="fas fa-step-forward"></i>
                     </button>
+                    <button id="takeScreenshotBtn" class="btn btn-secondary btn-action" type="button" disabled title="Save the current video frame without pausing playback">Take screenshot</button>
                     <label for="playbackSpeed">Speed</label>
                     <select id="playbackSpeed" aria-label="Playback speed">
                         <option value="0.5">0.5x</option>
@@ -221,7 +235,7 @@
                 
                 <div class="tab-content">
                     <div class="tab-pane active" id="transcript-tab">
-                        <div class="controls-bar">
+                        <div class="controls-bar transcript-controls">
                             <div class="search-container">
                                 <div class="search-input-wrapper">
                                     <input type="text" id="transcriptSearch" class="search-input" placeholder="Search transcript...">
@@ -569,8 +583,15 @@
                                 <small id="exportFilenameSuggestion">Suggestion: based on the title and export type</small>
                                 <label><input type="checkbox" id="exportImages"> Images</label>
                                 <label><input type="checkbox" id="exportTranscripts"> Transcript files</label>
-                                <label><input type="checkbox" id="exportClips"> Video clips</label>
-                                <label title="Encodes one extra video file per section (takes longer). The webpage shows each section's clip under its heading."><input type="checkbox" id="exportSectionClips"> Section clips</label>
+                                <label><input type="checkbox" id="exportClips"> Video files (MP4)</label>
+                                <label for="exportVideoScope">Include videos for</label>
+                                <select id="exportVideoScope">
+                                    <option value="chapters">Each chapter</option>
+                                    <option value="parts">Each part / section</option>
+                                    <option value="both" selected>Both chapters and parts / sections</option>
+                                </select>
+                                <input type="checkbox" id="exportSectionClips" hidden aria-hidden="true">
+                                <small>Applies to MP4 files, HTML and SCORM. Parts follow the section grouping above; each selected part gets its own playable video. Both takes longer to encode.</small>
                                 <label title="Title, images and transcript in one document"><input type="checkbox" id="exportWord"> Word document</label>
                                 <label title="Title, images and transcript in one document"><input type="checkbox" id="exportPdf"> PDF document</label>
                                 <label title="Sections, slides, video clips and transcript in a webpage package. Re-encoding long videos can take time."><input type="checkbox" id="exportWebpage" checked> HTML webpage (with video clips)</label>
@@ -588,23 +609,24 @@
                             </dialog>
                         </div>
                         <p id="chapterProjectStatus" role="status" aria-live="polite" hidden></p>
+                        <button id="cancelChapterProjectBtn" class="btn btn-secondary btn-action" type="button" hidden>Cancel encoding</button>
                         <button id="openChapterProjectBtn" class="btn btn-secondary btn-action" type="button" hidden>Open chapter project</button>
                         <div class="tab-body" id="chaptersContainer">
                             <div id="summaryStatus" class="summary-status" role="status" aria-live="polite"></div>
                             <p>Click "Generate chapters" to create chapter markers from the transcript.</p>
                         </div>
                         <div id="exportProgress" class="summary-status" role="status" aria-live="polite"></div>
-                        <section class="saved-exports" aria-labelledby="savedExportsTitle">
+                        <details class="saved-exports" id="savedExportsMenu">
+                            <summary id="savedExportsTitle">Saved exports</summary>
                             <div class="saved-exports-header">
-                                <h3 id="savedExportsTitle"><i class="fas fa-folder-open" aria-hidden="true"></i> Saved exports</h3>
                                 <button id="refreshSavedExportsBtn" type="button" class="btn btn-secondary btn-action btn-icon" title="Refresh saved exports" aria-label="Refresh saved exports"><i class="fas fa-sync-alt" aria-hidden="true"></i></button>
                             </div>
                             <div id="savedExports"></div>
-                        </section>
+                        </details>
                     </div>
                     
                     <div class="tab-pane" id="scenes-tab">
-                        <div class="controls-bar">
+                        <div class="controls-bar slide-controls">
                             <button id="edit-slides-btn" class="btn btn-secondary btn-action" type="button" disabled>Edit slide titles</button>
                             <label for="slideTranslationTarget">Slide title language</label>
                             <select id="slideTranslationTarget">
@@ -851,19 +873,6 @@
         </div>
     </div>
 
-    <dialog id="contentEditorDialog" class="options-dialog" aria-labelledby="contentEditorHeading" aria-describedby="contentEditorHelp">
-        <form id="contentEditorForm">
-            <h2 id="contentEditorHeading">Edit content</h2>
-            <p id="contentEditorHelp"></p>
-            <div id="contentEditorRows"></div>
-            <p id="contentEditorError" role="status" aria-live="polite"></p>
-            <div class="dialog-actions">
-                <button id="cancelContentEditsBtn" class="btn btn-secondary" type="button">Cancel</button>
-                <button id="discardContentEditsBtn" class="btn btn-danger" type="button" hidden>Discard edits</button>
-                <button id="saveContentEditsBtn" class="btn btn-accent" type="submit">Save edits</button>
-            </div>
-        </form>
-    </dialog>
     <!-- Scripts -->
     <script src="/static/js/popup-placement.js?v=slide-downloads-20261007"></script>
     <script src="/static/js/layout-resize.js?v=slide-downloads-20261007"></script>

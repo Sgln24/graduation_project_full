@@ -12,6 +12,7 @@ import { fetchOcrResults, resetOcrStatus } from './ocr.js';
 import { refreshTranscriptVersions } from './transcript-versions.js';
 import { startElapsedTimer } from './progress-time.js';
 import { savedSummaryUrl } from './content-languages.js';
+import { loadProjectCaptionTracks } from './caption-export.js';
 
 // Translate backend transcript_source/active_language fields (set from the
 // persisted "active source" marker) into the state.currentTranscriptSource
@@ -801,6 +802,10 @@ function resetVideoStates() {
     state.currentVideoFilename = null;
     state.currentTranslationLanguage = null;
     document.dispatchEvent(new CustomEvent('videoSelectionChanged'));
+    elements.videoPlayer.querySelectorAll('track[data-chapter-caption], track[data-caption-copy]').forEach(track => {
+        track.track.mode = 'disabled';
+        track.remove();
+    });
     state.whisperTranscriptPollGeneration += 1;
     if (elements.translationTarget) {
         elements.translationTarget.value = '';
@@ -1285,6 +1290,7 @@ export async function loadUploadedVideo(videoId) {
         state.currentVideoId = data.video_id;
         state.currentVideoFilename = Array.from(document.getElementById('uploadedVideos')?.options || [])
             .find((option) => option.value === data.video_id)?.dataset.filename || null;
+        await loadProjectCaptionTracks(data.video_id, elements.videoPlayer);
         await refreshTranscriptVersions();
         elements.detectScenesBtn.disabled = false;
         elements.exportChaptersBtn.disabled = false;

@@ -67,7 +67,8 @@ export function updateTranscriptDisplay() {
             div.dataset.time = item.start;
         }
         
-        div.onclick = () => {
+        div.onclick = (event) => {
+            if (div.closest('.is-inline-editing') || event.target.closest('textarea, input')) return;
             const time = parseFloat(item.start);
             if (!isNaN(time)) {
                 elements.videoPlayer.currentTime = time;
@@ -82,6 +83,7 @@ export function updateTranscriptDisplay() {
  * Updates the active transcript line based on current video time
  */
 export function updateActiveTranscript() {
+    if (elements.transcriptContainer?.classList.contains('is-inline-editing')) return;
     const videoPlayer = elements.videoPlayer;
     const currentTime = videoPlayer.currentTime;
     

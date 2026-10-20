@@ -15,12 +15,15 @@ import { initTranscriptVersions } from './transcript-versions.js';
 import { initCaptionExport } from './caption-export.js';
 import { initVttBatch } from './vtt-batch.js';
 import { openOptionsDialog } from './utils.js';
-import { initContentEditor } from './content-editor.js';
 import { initChapterProjects } from './chapter-projects.js';
 import { initChapterTools } from './chapter-tools.js';
 import { contentLanguage } from './content-languages.js';
 import { initSpeakerTimeline } from './speaker-timeline.js';
 import { initVideoSummary } from './video-summary.js';
+import { initInlineEditor } from './content-editor.js';
+import { initActionMenus } from './action-menus.js';
+import { initLibrary } from './library.js';
+import { initFrameScreenshot } from './slide-downloads.js';
 
 // Global state
 export const state = {
@@ -482,7 +485,10 @@ function initApp() {
     initTranscriptVersions();
     initCaptionExport();
     initVttBatch(updateTranslationModelStatus);
-    initContentEditor();
+    initInlineEditor();
+    initActionMenus();
+    initLibrary();
+    initFrameScreenshot();
     initSpeakerTimeline();
     initVideoSummary();
     initChapterTools();

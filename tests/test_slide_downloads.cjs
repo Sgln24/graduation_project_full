@@ -25,6 +25,8 @@ const context = vm.createContext({
     state, console,
     document: {createElement: element, getElementById: () => wordButton},
     contentLanguage: (_, __, language) => language || '',
+    slideTitle: scene => scene.title || '',
+    sceneTopicTitle: () => '',
     fetch: async (url, options) => {
         requests.push({url, options});
         return {ok: true, blob: async () => 'blob'};
@@ -45,7 +47,11 @@ const event = () => ({stopped: false, prevented: false,
     state.currentVideoId = 'changed-video';
     await tick();
     assert.equal(requests[0].url, '/download_slide/video-id/1', 'Row retains its video identity');
-    assert.equal(saves[0].filename, 'video-id_slide_2.jpg');
+    assert.equal(saves[0].filename, 'Slide_002.jpg');
+    state.videoScenes[1].title = 'Introduction to neural networks';
+    assert.equal(context.slideDownloadFilename(1), 'Slide_002_Introduction_to_neural_networks.jpg');
+    state.videoScenes[1].title = 'x'.repeat(200);
+    assert(context.slideDownloadFilename(1).length < 80);
     assert(!slide.disabled && !slide.attributes['aria-busy']);
     const key = event();
     slide.handlers.keydown(key);

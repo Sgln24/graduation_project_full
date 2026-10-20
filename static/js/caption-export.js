@@ -36,14 +36,42 @@ export function selectedMediaExportId(videoId) {
         && player.getAttribute('src') === `/caption_copy/${encodeURIComponent(videoId)}/${id}` ? id : null;
 }
 
+export function selectedCaptionTrackIndex() {
+    const player = document.querySelector('video');
+    const index = Array.from(player?.textTracks || [])
+        .filter(track => track.kind === 'subtitles' || track.kind === 'captions')
+        .findIndex(track => track.mode === 'showing');
+    return index < 0 ? null : index;
+}
+
 function clearCopyCaptions(player) {
-    player.querySelectorAll('track[data-caption-copy]').forEach(element => {
+    player.querySelectorAll('track[data-caption-copy], track[data-chapter-caption]').forEach(element => {
         // Chromium can keep drawing active cues from a detached, showing track.
         element.track.mode = 'disabled';
         element.default = false;
         element.remove();
     });
     visibleCopyTrack = null;
+}
+
+export async function loadProjectCaptionTracks(videoId, player) {
+    const response = await fetch(`/chapter_captions/${encodeURIComponent(videoId)}`);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Could not load chapter captions.');
+    if (state.currentVideoId !== videoId) return;
+    clearCopyCaptions(player);
+    const chosen = Math.max(0, (data.tracks || []).findIndex(track => track.default));
+    for (const [index, item] of (data.tracks || []).entries()) {
+        const track = document.createElement('track');
+        track.kind = 'subtitles';
+        track.label = item.label;
+        track.srclang = ({eng: 'en', deu: 'de', ger: 'de', ara: 'ar', pol: 'pl'})[item.language] || item.language;
+        track.src = item.url;
+        track.dataset.chapterCaption = '';
+        track.default = index === chosen;
+        player.appendChild(track);
+        track.track.mode = index === chosen ? 'showing' : 'disabled';
+    }
 }
 
 function syncCaptionVisibility(player) {
@@ -76,7 +104,7 @@ async function useVideoCopy(job = null) {
     const at = player.currentTime;
     const playbackRate = player.playbackRate;
     const wasPlaying = !player.paused;
-    const previousTracks = Array.from(player.querySelectorAll('track[data-caption-copy]'),
+    const previousTracks = Array.from(player.querySelectorAll('track[data-caption-copy], track[data-chapter-caption]'),
         element => ({element, mode: element.track.mode, default: element.default}));
     let sourceChanged = false;
     try {
@@ -121,6 +149,7 @@ async function useVideoCopy(job = null) {
         visibleCopyTrack = copyTracks[0] || null;
         copyTracks.forEach((track, index) => { track.mode = index === 0 ? 'showing' : 'disabled'; });
         syncCaptionVisibility(player);
+        if (!job) await loadProjectCaptionTracks(videoId, player);
         player.dataset.captionExportId = job?.id || '';
         player.dataset.captionVideoId = videoId;
         player.currentTime = Math.min(at, Math.max(0, player.duration - 0.1));

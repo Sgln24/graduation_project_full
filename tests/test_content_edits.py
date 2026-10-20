@@ -136,6 +136,67 @@ class ContentEditsTests(unittest.TestCase):
         self.save("transcript", ["Changed", "Second"])
         self.save("transcript", ["Lost update", "Second"], revision=revision, status=409)
 
+    def outline(self):
+        chapters = [
+            {"timestamp": "00:00", "title": "First", "summary": "One", "extra": 7, "sections": [
+                {"timestamp": "00:00", "title": "A", "point": "Alpha", "extra": 9},
+                {"timestamp": "00:10", "title": "B", "point": "Beta"},
+                {"timestamp": "00:20", "title": "C", "point": "Gamma"}]},
+            {"timestamp": "00:30", "title": "Second", "summary": "Two", "sections": [
+                {"timestamp": "00:30", "title": "D", "point": "Delta"},
+                {"timestamp": "00:40", "title": "E", "point": "Epsilon"}]},
+        ]
+        self.write(self.SUMMARIES_DIR / "vid.json", chapters)
+        return chapters
+
+    def test_outline_grouping_saves_atomically_and_retains_text_and_metadata(self):
+        for operation in [
+            {"action": "merge_section", "chapter": 0, "section": 0},
+            {"action": "merge_chapter", "chapter": 0},
+            {"action": "promote", "chapter": 0, "section": 1},
+            {"action": "move_section", "chapter": 0, "section": 2, "target": 1},
+            {"action": "move_section", "chapter": 1, "section": 0, "target": 0},
+        ]:
+            original = self.outline()
+            changed = content_edits.outline_operations(original, [operation])
+            changed[0]["title"] = "Inline title"
+            saved = self.save("chapters", changed, operations=[operation])["content"]
+            self.assertEqual(saved[0]["extra"], 7)
+            self.assertEqual(saved[0]["title"], "Inline title")
+            for word in ("Alpha", "Beta", "Gamma", "Delta", "Epsilon"):
+                self.assertIn(word, json.dumps(saved))
+            self.assertEqual(self.get("chapters")["content"], saved)
+            if operation["action"] == "merge_section":
+                self.assertEqual(saved[0]["sections"][0]["extra"], 9)
+                self.assertEqual(saved[0]["sections"][0]["timestamp"], "00:00")
+                self.assertEqual(saved[0]["sections"][0]["title"], "A")
+
+    def test_invalid_structure_never_overwrites_saved_outline(self):
+        original = self.outline()
+        for op in [
+            {"action": "move_section", "chapter": 0, "section": 1, "target": 1},
+            {"action": "move_section", "chapter": 0, "section": 2, "target": 2},
+            {"action": "promote", "chapter": 0, "section": 0},
+            {"action": "merge_section", "chapter": 0, "section": 2},
+            {"action": "merge_chapter", "chapter": True},
+        ]:
+            self.save("chapters", original, status=400, operations=[op])
+            self.assertEqual(self.get("chapters")["content"], original)
+
+    def test_slide_inline_timestamps_keep_images_and_translation(self):
+        self.write(self.SCENES_DIR / "vid.json", [
+            {"timestamp": "00:00", "time_seconds": 0, "image": "first.jpg"},
+            {"timestamp": "00:10", "time_seconds": 10, "image": "second.jpg"},
+        ])
+        result = self.save("slides", [{"timestamp": "00:01.500", "title": "One"},
+                                      {"timestamp": "00:12", "title": "Two"}], language="en")["content"]
+        self.assertEqual(result[0]["image"], "first.jpg")
+        self.assertEqual(result[0]["time_seconds"], 1.5)
+        self.assertEqual(result[0]["duration"], 10.5)
+        self.assertEqual(result[0]["title_translations"]["en"], "One")
+        self.save("slides", [{"timestamp": "00:15", "title": "No"},
+                             {"timestamp": "00:12", "title": "Two"}], status=400)
+
     def test_invalid_edits_do_not_change_files(self):
         edits = copy.deepcopy(self.chapters)
         for timestamp in ("bad", "-01:00", "01:60:00", "00:00"):

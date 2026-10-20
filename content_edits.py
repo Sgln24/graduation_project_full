@@ -1,5 +1,6 @@
 """Validated, conflict-checked edits to saved lecture content."""
 import hashlib
+import copy
 import json
 import re
 import threading
@@ -153,6 +154,77 @@ def _chapters(original, edits):
     return result
 
 
+def outline_operations(chapters, operations):
+    """Apply chronological grouping changes without dropping saved content or metadata."""
+    result = copy.deepcopy(chapters)
+    if not isinstance(operations, list) or len(operations) > 500:
+        raise HTTPException(400, "Invalid outline operations.")
+    for operation in operations:
+        if not isinstance(operation, dict):
+            raise HTTPException(400, "Invalid outline operation.")
+        action, index = operation.get("action"), operation.get("chapter")
+        if type(index) is not int or not 0 <= index < len(result):
+            raise HTTPException(400, "The chapter no longer exists.")
+        chapter = result[index]
+        sections = chapter.setdefault("sections", [])
+        if action == "merge_chapter":
+            if index + 1 >= len(result):
+                raise HTTPException(400, "Choose two adjacent chapters.")
+            following = result.pop(index + 1)
+            for item in (chapter, following):
+                if not item.get("sections"):
+                    item["sections"] = [{"timestamp": item["timestamp"], "title": item["title"],
+                                         "point": item.get("summary", "")}]
+            chapter["sections"] += following["sections"]
+            chapter["summary"] = "\n\n".join(filter(None, [chapter.get("summary"), following.get("summary")]))
+        else:
+            part = operation.get("section")
+            if type(part) is not int or not 0 <= part < len(sections):
+                raise HTTPException(400, "The part no longer exists.")
+            if action == "merge_section":
+                if part + 1 >= len(sections):
+                    raise HTTPException(400, "Choose two adjacent parts in one chapter.")
+                following = sections.pop(part + 1)
+                sections[part]["point"] = "\n\n".join(filter(None, [
+                    sections[part].get("point"), following["title"], following.get("point"),
+                ]))
+            elif action == "promote":
+                selected = sections[part]
+                if _seconds(selected["timestamp"]) == _seconds(chapter["timestamp"]):
+                    raise HTTPException(400, "This part already starts its chapter. Edit the chapter title instead.")
+                result.insert(index + 1, {
+                    "timestamp": selected["timestamp"], "title": selected["title"], "summary": "",
+                    "sections": sections[part:], "user_edited": True, "timestamp_edited": True,
+                })
+                chapter["sections"] = sections[:part]
+            elif action == "move_section":
+                target = operation.get("target")
+                if type(target) is not int or abs(target - index) != 1 or not 0 <= target < len(result):
+                    raise HTTPException(400, "Move a boundary part only to an adjacent chapter.")
+                if len(sections) < 2:
+                    raise HTTPException(400, "Use Merge chapters to move the last remaining part.")
+                destination = result[target]
+                if not destination.get("sections"):
+                    destination["sections"] = [{"timestamp": destination["timestamp"],
+                                                 "title": destination["title"], "point": destination.get("summary", "")}]
+                if target < index and part == 0:
+                    destination["sections"].append(sections.pop(0))
+                    chapter["timestamp"] = sections[0]["timestamp"]
+                    chapter["timestamp_edited"] = True
+                elif target > index and part == len(sections) - 1:
+                    moved = sections.pop()
+                    destination["sections"].insert(0, moved)
+                    destination["timestamp"] = moved["timestamp"]
+                    destination["timestamp_edited"] = True
+                else:
+                    raise HTTPException(400, "Only the first part can move back, or the last part forward, to preserve video order.")
+                destination["user_edited"] = True
+            else:
+                raise HTTPException(400, "Unknown outline operation.")
+        chapter["user_edited"] = True
+    return result
+
+
 def persist_chapters(video_id, content, context, language, selected_language, source):
     entry, transcript, path = context
     version = transcript_versions.save_version(
@@ -188,18 +260,29 @@ async def save_content_edits(video_id: str, request: Request):
                     raise HTTPException(400, "The slide count must not change.")
                 content = []
                 for scene, value in zip(original, edits):
-                    title = _text(value, "Slide title", blank=True, limit=500)
+                    title = _text(value.get("title") if isinstance(value, dict) else value,
+                                  "Slide title", blank=True, limit=500)
+                    if isinstance(value, dict):
+                        timestamp = _text(value.get("timestamp"), "Slide timestamp", limit=30)
+                        scene = {**scene, "timestamp": timestamp, "time_seconds": _seconds(timestamp)}
                     if language:
                         content.append({**scene, "title_translations": {
                             **(scene.get("title_translations") or {}), language: title,
                         }})
                     else:
                         content.append({**scene, "title": title, "title_edited": bool(title)})
+                times = [float(scene.get("time_seconds", 0)) for scene in content]
+                if any(right <= left for left, right in zip(times, times[1:])):
+                    raise HTTPException(400, "Slide timestamps must stay in increasing order.")
+                for index, scene in enumerate(content[:-1]):
+                    if isinstance(edits[index], dict):
+                        scene["duration"] = times[index + 1] - times[index]
                 transcript_versions._write_json(SCENES_DIR / f"{video_id}.json", content)
                 return {"content": content, "revision": _revision(content)}
             transcript_versions.sync_existing(video_id)
             if kind == "chapters":
-                content = _chapters(original, edits)
+                structured = outline_operations(original, data.get("operations", []))
+                content = _chapters(structured, edits)
                 version = persist_chapters(video_id, content, context, language, selected_language, source)
             else:
                 if not isinstance(edits, list) or len(edits) != len(original):

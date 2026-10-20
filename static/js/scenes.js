@@ -299,7 +299,8 @@ export function updateScenes(scenes, videoPlayer) {
         `;
         div.querySelector('.scene-label').dataset.number = index + 1;
         div.appendChild(createSlideDownloadButton([index], `Download slide ${index + 1}`));
-        div.onclick = () => {
+        div.onclick = (event) => {
+            if (div.closest('.is-inline-editing') || event.target.closest('input, textarea, button')) return;
             videoPlayer.currentTime = scene.time_seconds;
         };
         scenesContainer.appendChild(div);

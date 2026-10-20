@@ -39,6 +39,8 @@ from collections import Counter
 from PIL import Image as PillowImage, UnidentifiedImageError
 from dotenv import load_dotenv
 from export_jobs import ExportJobStore, export_workspace, cleanup_export_workspace
+import library
+import chapter_projects
 from starlette.background import BackgroundTask
 from ffmpeg_tools import media_executable
 from caption_exports import validate_captions, render_captioned_video, video_duration, caption_text, caption_filename, validate_caption_style, render_caption_preview, render_selectable_captions
@@ -74,6 +76,7 @@ async def lifespan(app):
 app = FastAPI(lifespan=lifespan)
 app.include_router(content_edits_router)
 app.include_router(chapter_projects_router)
+app.include_router(library.router)
 
 ensure_app_directories()
 
@@ -2036,12 +2039,13 @@ def create_combined_chapter_documents(
             ])
         if pdf_story is not None and pdf_text:
             for subpart_index, subpart in enumerate(files.get("subparts", []), start=1):
-                pdf_story.append(pdf_paragraph(
-                    f"{index + 1}.{subpart_index} " + subpart["title"] + (
-                        f" ({format_chapter_timestamp(subpart['start'])})" if timestamp_mode != "part" else ""
-                    ),
-                    "Heading2",
-                ))
+                if len(files.get("subparts", [])) > 1:
+                    pdf_story.append(pdf_paragraph(
+                        f"{index + 1}.{subpart_index} " + subpart["title"] + (
+                            f" ({format_chapter_timestamp(subpart['start'])})" if timestamp_mode != "part" else ""
+                        ),
+                        "Heading2",
+                    ))
                 for scene in subpart["slides"]:
                     pdf_story.append(pdf_paragraph(
                         f"Slide at {format_chapter_timestamp(export_slide_start(scene))}", "Normal",
@@ -2070,11 +2074,12 @@ def create_combined_chapter_documents(
                 pass
         if word_document and word_text:
             for subpart_index, subpart in enumerate(files.get("subparts", []), start=1):
-                word_document.add_heading(
-                    f"{index + 1}.{subpart_index} " + subpart["title"] + (
-                        f" ({format_chapter_timestamp(subpart['start'])})" if timestamp_mode != "part" else ""
-                    ), level=2
-                )
+                if len(files.get("subparts", [])) > 1:
+                    word_document.add_heading(
+                        f"{index + 1}.{subpart_index} " + subpart["title"] + (
+                            f" ({format_chapter_timestamp(subpart['start'])})" if timestamp_mode != "part" else ""
+                        ), level=2
+                    )
                 for scene in subpart["slides"]:
                     word_document.add_paragraph(
                         f"Slide at {format_chapter_timestamp(export_slide_start(scene))}"
@@ -2117,6 +2122,11 @@ def collapse_word_heading(paragraph):
     paragraph_properties.append(OxmlElement("w:collapsed"))
 
 export_jobs = ExportJobStore(EXPORTS_DIR / "jobs")
+library.stores = {"exports": export_jobs, "projects": chapter_projects.jobs, "chapter-videos": chapter_projects.video_jobs}
+library.busy = lambda video_id: any(
+    key.startswith(video_id + ":") and value.get("status") == "running"
+    for key, value in translation_progress.items()
+)
 
 
 @app.post("/vtt_translation_jobs")
@@ -2408,6 +2418,13 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
         "include_section_clips",
         "include_screenshot_transcript",
     )}
+    video_scope = options.get("video_scope", "both" if export_flags["include_section_clips"] else "chapters")
+    if video_scope not in {"chapters", "parts", "both"}:
+        raise HTTPException(400, "Invalid video scope; choose chapters, parts or both.")
+    video_requested = any(export_flags[name] for name in ("include_clips", "include_webpage", "include_scorm"))
+    chapter_videos = video_requested and video_scope != "parts"
+    export_flags["include_section_clips"] = export_flags["include_section_clips"] or (
+        video_requested and video_scope in {"parts", "both"})
     if not any(export_flags.values()):
         raise HTTPException(status_code=400, detail="Select at least one export option")
     video_path = (str(caption_copy_path(video_id, options["media_export_id"]))
@@ -2624,9 +2641,9 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                 number = chapter["index"]
                 chapter["clip_start"] = max(0.0, chapter["start"] - (overlap_seconds if number > 1 else 0.0))
                 step(f"Part {number}/{len(chapter_data)}: preparing {chapter['title']}")
-                safe_title = re.sub(r"[^A-Za-z0-9_-]+", "_", chapter["title"]).strip("_") or f"chapter_{number}"
+                safe_title = re.sub(r"[^A-Za-z0-9_-]+", "_", chapter["title"]).strip("_")[:80] or f"chapter_{number}"
                 base_name = f"{number:02d}_{safe_title}"
-                clip_path = temp_dir / f"{base_name}.mp4"
+                clip_path = temp_dir / f"{number:02d}-{safe_title}.mp4"
                 image_path = temp_dir / f"{base_name}.jpg"
                 transcript_path = temp_dir / f"{base_name}.txt"
 
@@ -2641,7 +2658,7 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                     *clip_stream_options, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                     "-c:a", "aac", str(clip_path),
                 ])
-                if export_flags["include_clips"] or export_flags["include_webpage"] or export_flags["include_scorm"]:
+                if chapter_videos:
                     ffmpeg_clip[0] = media_executable("ffmpeg")
                     step(f"Part {number}/{len(chapter_data)}: encoding video clip with FFmpeg")
                     if chapter["clip_start"] < chapter["start"]:
@@ -2752,14 +2769,21 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                                     video_id, video_path, slide_start, scene_chapters,
                                     scene["image"], image_cache, step,
                                 )
-                    if export_flags["include_section_clips"] and len(files["subparts"]) > 1:
+                    if export_flags["include_section_clips"]:
                         for subpart_index, subpart in enumerate(files["subparts"], start=1):
+                            if len(files["subparts"]) == 1 and chapter_videos:
+                                subpart["clip"] = clip_path
+                                subpart["clip_start"] = chapter["clip_start"]
+                                continue
                             section_end = (
                                 files["subparts"][subpart_index]["start"]
                                 if subpart_index < len(files["subparts"]) else chapter["end"]
                             )
-                            section_start = max(0.0, subpart["start"] - overlap_seconds)
-                            section_clip = temp_dir / f"{base_name}_{subpart_index:02d}.mp4"
+                            section_start = max(chapter["clip_start"], subpart["start"] - overlap_seconds)
+                            section_title = re.sub(r"[^A-Za-z0-9_-]+", "_", subpart["title"]).strip("_")[:60] or "Section"
+                            section_clip = temp_dir / f"{number:02d}_{subpart_index:02d}-{section_title}.mp4"
+                            if len(files["subparts"]) == 1:
+                                section_clip = clip_path
                             command = [
                                 media_executable("ffmpeg"), "-y", "-hide_banner", "-loglevel", "error",
                                 "-ss", str(section_start), "-i", str(video_path),
@@ -2777,6 +2801,9 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                                 section_end - section_start if section_end is not None else None,
                             )
                             subpart["clip"] = section_clip
+                            subpart["clip_start"] = section_start
+                            if len(files["subparts"]) == 1:
+                                files["clip"] = section_clip
                 chaptered_lines.extend([
                     f"## Part {number}: {chapter['title']}",
                     f"Start: {format_chapter_timestamp(chapter['start'])}",
@@ -2812,11 +2839,21 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                 show_section_times = timestamp_mode != "part"
 
                 def seek_link(clip_index, clip_start, seconds, label, css_class="seek"):
+                    files = chapter_files[clip_index - 1]
+                    video_id = f"video-{clip_index}"
+                    path = files["clip"]
+                    if not chapter_videos and files.get("subparts"):
+                        selected = [(i, part) for i, part in enumerate(files["subparts"], 1)
+                                    if part["start"] <= seconds]
+                        part_index, part = selected[-1] if selected else (1, files["subparts"][0])
+                        path, clip_start = part["clip"], part["clip_start"]
+                        if len(files["subparts"]) > 1:
+                            video_id += f"-{part_index}"
                     offset = max(0.0, seconds - clip_start)
-                    clip = html.escape(chapter_files[clip_index - 1]["clip"].name, quote=True)
+                    clip = html.escape(path.name, quote=True)
                     return (
                         f"<a class=\"{css_class}\" href=\"{clip}#t={offset:.3f}\" "
-                        f"data-video=\"video-{clip_index}\" data-t=\"{offset:.3f}\">{label}</a>"
+                        f"data-video=\"{video_id}\" data-t=\"{offset:.3f}\">{label}</a>"
                     )
 
                 html_language = html.escape(transcript_language or ("ar" if export_rtl else "en"))
@@ -2928,16 +2965,19 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                                 + "</ul>"
                             )
                         webpage_parts.append("</details>")
-                    webpage_parts.extend([
-                        f"<video id=\"video-{chapter['index']}\" controls preload=\"metadata\" src=\"{html.escape(clip_name)}\"></video>",
-                        "<details class=\"chapter-subparts\" open><summary>Sections</summary>",
-                    ])
+                    multiple_parts = len(files["subparts"]) > 1
+                    if chapter_videos or not multiple_parts:
+                        webpage_parts.append(
+                            f"<video id=\"video-{chapter['index']}\" controls preload=\"metadata\" src=\"{html.escape(clip_name)}\"></video>")
+                    if multiple_parts:
+                        webpage_parts.append("<details class=\"chapter-subparts\" open><summary>Sections</summary>")
                     for subpart_index, subpart in enumerate(files["subparts"], start=1):
                         subpart_timestamp = (
                             f" ({format_chapter_timestamp(subpart['start'])})"
                             if show_section_times else ""
                         )
-                        webpage_parts.append(
+                        if multiple_parts:
+                            webpage_parts.append(
                             f"<details class=\"subpart\" id=\"part-{chapter['index']}-{subpart_index}\">"
                             f"<summary><h3 title=\"{html.escape(subpart['title'], quote=True)}\">"
                             f"{chapter['index']}.{subpart_index} {html.escape(subpart['title'])}"
@@ -2967,16 +3007,17 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                                 f"Slide {scene['image_index'] + 1}: {format_chapter_timestamp(slide_start)}",
                             ))
                         webpage_parts.append("</p>")
-                        if subpart.get("clip"):
+                        if subpart.get("clip") and multiple_parts:
                             webpage_parts.append(
-                                f"<video class=\"section-video\" controls preload=\"none\" "
+                                f"<video id=\"video-{chapter['index']}-{subpart_index}\" class=\"section-video\" controls preload=\"none\" "
                                 f"src=\"{html.escape(subpart['clip'].name, quote=True)}\"></video>"
                             )
                         webpage_parts.append(
                             "<details class=\"transcript\"><summary>Transcript</summary>"
-                            f"<pre>{html.escape(subpart['transcript'])}</pre></details></details>"
+                            f"<pre>{html.escape(subpart['transcript'])}</pre></details>"
+                            + ("</details>" if multiple_parts else "")
                         )
-                    webpage_parts.append("</details></section>")
+                    webpage_parts.append(("</details>" if multiple_parts else "") + "</section>")
                 webpage_parts.append(
                     "<script>document.addEventListener('click',function(event){"
                     "var link=event.target.closest('a[data-video]');if(!link)return;"
@@ -3005,11 +3046,12 @@ async def export_chapters(video_id: str, request: Request, on_step=None, on_arti
                             add_word_slide_content(outline_document, files["slide_content"], level=3)
                         if files["subparts"]:
                             for subpart_index, subpart in enumerate(files["subparts"], start=1):
-                                outline_document.add_heading(
-                                    f"{chapter['index']}.{subpart_index} {subpart['title']} "
-                                    f"({format_chapter_timestamp(subpart['start'])})",
-                                    level=3,
-                                )
+                                if len(files["subparts"]) > 1:
+                                    outline_document.add_heading(
+                                        f"{chapter['index']}.{subpart_index} {subpart['title']} "
+                                        f"({format_chapter_timestamp(subpart['start'])})",
+                                        level=3,
+                                    )
                                 for point in subpart["points"]:
                                     outline_document.add_paragraph(
                                         point["text"],

@@ -9,7 +9,9 @@ import { scrollWithinContainer } from './scroll-utils.js';
 import { createSlideDownloadButton } from './slide-downloads.js';
 import { startElapsedTimer } from './progress-time.js';
 import { selectedMediaExportId } from './caption-export.js';
-import { createChapterProjectButton } from './chapter-projects.js';
+import { createChapterProjectButton, createChapterDownloadButton } from './chapter-projects.js';
+import { rowActions } from './action-menus.js';
+import { deleteSavedExport } from './library.js';
 import { contentLanguage, setContentLanguage } from './content-languages.js';
 
 let chapterMarkerGeneration = 0;
@@ -80,6 +82,8 @@ export function updateExportAvailability() {
     }
     const sectionClips = document.getElementById('exportSectionClips');
     if (sectionClips) sectionClips.disabled = !canBuildParts || !hasTranscript;
+    const clipScope = document.getElementById('exportVideoScope');
+    if (clipScope) clipScope.disabled = !hasVideo;
 
     if (elements.exportAvailabilityNote) {
         if (!hasVideo) {
@@ -211,6 +215,16 @@ export async function refreshSavedExports() {
                 void downloadSavedExport(item, download);
             });
             actions.appendChild(download);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn btn-secondary btn-action';
+            remove.textContent = 'Delete';
+            remove.setAttribute('aria-label', `Delete export ${item.title}`);
+            remove.addEventListener('click', async () => {
+                try { if (await deleteSavedExport(item)) await refreshSavedExports(); }
+                catch (error) { showError(error.message); }
+            });
+            actions.appendChild(remove);
             row.appendChild(actions);
             list.appendChild(row);
         });
@@ -269,6 +283,7 @@ export async function exportChapters() {
             clip_overlap: document.getElementById('exportClipOverlap')?.checked ?? true,
             include_section_clips: !document.getElementById('exportSectionClips')?.disabled
                 && (document.getElementById('exportSectionClips')?.checked ?? false),
+            video_scope: document.getElementById('exportVideoScope')?.value || 'chapters',
             include_slide_text: document.getElementById('exportSlideText')?.checked ?? false,
             document_title: elements.exportTitle?.value.trim() || '',
             export_filename: elements.exportFilename?.value.trim() || '',
@@ -521,10 +536,10 @@ async function readJsonResponse(response, operation) {
  * Updates the chapters display with new chapter data
  * @param {Array} chapters - The chapter data
  */
-export function updateChapters(chapters) {
+export function updateChapters(chapters, {editing = false} = {}) {
     const chaptersContainer = elements.chaptersContainer;
     const status = elements.summaryStatus;
-    chaptersContainer.querySelectorAll(':scope > .chapter-item, :scope > .chapter-sections, :scope > p').forEach(element => element.remove());
+    chaptersContainer.querySelectorAll(':scope > .chapter-item, :scope > .chapter-sections, :scope > .outline-move-zone, :scope > p').forEach(element => element.remove());
     if (status) {
         status.hidden = false;
     }
@@ -548,13 +563,17 @@ export function updateChapters(chapters) {
         timestamp.className = 'chapter-timestamp';
         timestamp.textContent = chapter.timestamp;
         const title = document.createElement('span');
+        title.className = 'chapter-title';
         title.textContent = conciseTitle(chapter.title);
         title.title = chapter.title;
         div.appendChild(timestamp);
         div.appendChild(title);
-        div.appendChild(createChapterProjectButton(chapter, index, chapters));
+        const actions = rowActions(div, `Chapter ${index + 1} actions`);
+        actions.appendChild(createChapterProjectButton(chapter, index, chapters));
+        div.appendChild(createChapterDownloadButton(chapter, index, chapters));
         if (chapter.summary) div.title = chapter.summary;
-        div.onclick = () => {
+        div.onclick = (event) => {
+            if (div.closest('.is-inline-editing') || event.target.closest('button, input, textarea, details')) return;
             const time = timestampSeconds(chapter.timestamp);
             elements.videoPlayer.currentTime = time;
             elements.videoPlayer.play().catch((error) => {
@@ -564,12 +583,17 @@ export function updateChapters(chapters) {
             });
         };
         chaptersContainer.appendChild(div);
-        if (Array.isArray(chapter.sections) && chapter.sections.length) {
+        if (Array.isArray(chapter.sections) && (chapter.sections.length > 1 || (editing && chapter.sections.length))) {
             const sections = renderChapterSections(chapter.sections);
             sections.hidden = true;
             div.classList.add('has-sections');
             div.prepend(expandToggle(div, sections, 'sections'));
             chaptersContainer.appendChild(sections);
+        } else if (chapter.sections?.length === 1) {
+            const point = document.createElement('p');
+            point.className = 'chapter-single-point';
+            point.textContent = chapter.sections[0].point || '';
+            if (point.textContent) div.appendChild(point);
         }
     });
     // Store the chapters in state
@@ -645,7 +669,7 @@ export function attachChapterSlides() {
         const list = document.createElement('ol');
         list.className = 'chapter-slides';
         inside.forEach(({ scene, index, time }) => list.appendChild(slideRow(scene, index, time)));
-        row.appendChild(createSlideDownloadButton(inside.map(({ index }) => index),
+        rowActions(row).appendChild(createSlideDownloadButton(inside.map(({ index }) => index),
             `Download all slides in ${row.tagName === 'LI' ? 'section' : 'chapter'} (${inside.length})`, {archive: true}));
         row.classList.add('has-slides');
         row.prepend(expandToggle(row, list, 'slides'));
@@ -661,7 +685,7 @@ export function attachChapterSlides() {
     container.querySelectorAll(':scope > .chapter-item.has-sections').forEach((chapter) => {
         const sections = chapter.nextElementSibling;
         const indices = [...sections.querySelectorAll('.chapter-slide')].map((slide) => Number(slide.dataset.index));
-        if (indices.length) chapter.appendChild(createSlideDownloadButton(indices,
+        if (indices.length) rowActions(chapter).appendChild(createSlideDownloadButton(indices,
             `Download all slides in chapter (${indices.length})`, {archive: true}));
     });
     activeChapterKey = '';
@@ -714,6 +738,7 @@ let activeChapterKey = '';
 
 /** Highlights the chapter and section being played, like the active transcript line. */
 export function updateActiveChapter() {
+    if (elements.chaptersContainer?.classList.contains('is-inline-editing')) return;
     const container = elements.chaptersContainer;
     const time = elements.videoPlayer?.currentTime;
     if (!container || !Number.isFinite(time)) return;
@@ -762,11 +787,14 @@ function renderChapterSections(sections) {
         timestamp.className = 'chapter-timestamp';
         timestamp.textContent = section.timestamp;
         const title = document.createElement('span');
+        title.className = 'section-title';
         title.textContent = section.title;
         item.appendChild(timestamp);
         item.appendChild(title);
+        rowActions(item, 'Part actions');
         if (section.point) item.title = section.point;
         const seek = () => {
+            if (item.closest('.is-inline-editing')) return;
             elements.videoPlayer.currentTime = timestampSeconds(section.timestamp);
             elements.videoPlayer.play().catch((error) => {
                 if (error.name !== 'AbortError') console.warn('Unable to play section:', error);

@@ -62,7 +62,7 @@ export function syncTimelineGrouping() {
         .map((chapter) => ({
             start: chapterStart(chapter),
             title: chapter.title || '',
-            sections: (Array.isArray(chapter.sections) ? chapter.sections : [])
+            sections: (Array.isArray(chapter.sections) && chapter.sections.length > 1 ? chapter.sections : [])
                 .map((section) => ({ start: chapterStart(section), title: section.title || '' }))
                 .filter((section) => Number.isFinite(section.start)),
         }))

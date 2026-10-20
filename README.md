@@ -230,13 +230,14 @@ These are the changes specifically described as fixes to the inherited project. 
 - **Saved Transcript Versions**: Every generated or uploaded transcript and every
   translation is kept. Pick one from the list below the Transcript options button to use it again
   (summaries and exports follow the chosen version), or delete versions you no longer need.
-- **Editable Content**: Use **Edit chapters** to correct chapter/section titles,
+- **Editable Content**: Open the panel's **Actions** menu and use **Edit chapters** to correct chapter/section titles,
   timestamps, summaries and section text; timestamps must remain ordered and sections
   inside their chapter. Manually changed timestamps are preserved exactly in new exports.
   **Edit slide titles** sets video-wide title overrides (leave blank to restore automatic
   titles). **Edit transcript** corrects segment text without changing timing or speakers
   and saves an edited version while keeping the original in the version list.
-  All editors have explicit Save/Cancel controls and warn before discarding unsaved edits.
+  Editing happens in the main panel, without a separate popup. All editors have
+  explicit Save/Cancel controls and warn before discarding unsaved edits.
   Saved changes survive reloads and apply to navigation and new exports, not existing
   export files. Reload and reopen the editor if another operation changed the content.
 - **Resizable Layout**: Drag the handles between the video, visual timeline and side
@@ -535,9 +536,24 @@ saved outline without regenerating the transcript or dropping its takeaways.
 These actions are explicit; existing outlines are not silently rewritten.
 
 **Editing:** **Edit chapters**, **Edit slide titles** and **Edit transcript**
-open a modal editor. Change the fields inside it and choose **Save edits**;
-the main headings are not inline-editable. Cancel/discard leaves saved content
-unchanged, and concurrent saved edits prevent stale overwrites.
+are grouped under each panel's **Actions** menu and turn the displayed text into
+inline fields. Change titles, timestamps or transcript text in place, then
+**Save changes** or **Cancel**. Chapter summaries and part text are editable in
+their row menus. Cancelling leaves saved content unchanged, and revision checks
+prevent stale overwrites. Transcript corrections create an edited version while
+retaining the original.
+
+While editing chapters, drag a handle onto an adjacent chapter or adjacent part
+to merge, with confirmation. The earlier title and start time are kept and all
+text is retained. Drop a boundary part into an adjacent chapter's move zone to
+change its grouping; chapter starts adjust without reordering the video.
+The first part can move to the previous chapter and the last to the next.
+Save manually edited timestamps before regrouping so the saved boundaries and
+the draft agree.
+Row menus provide the same actions without dragging. **Make a new chapter**
+splits at a part's timestamp, carrying the following parts into the new chapter.
+A chapter with just one section is displayed/exported as the chapter alone,
+without a redundant section heading; its text remains included.
 
 **Languages:** Generate chapters always uses the open transcript, not an older
 transcript or the interface language. **Translate chapters and sections** and
@@ -553,6 +569,26 @@ Older mismatched outlines need an explicit translation or regeneration.
 **Export defaults:** Content chapters remain the top-level parts, with saved
 topic sections and slide-change sections included by default. Saved sections
 are reused even when slide changes are included, avoiding unnecessary AI calls.
+**Include videos for** offers each chapter, each part/section, or both, for
+MP4, HTML and SCORM exports. Part videos are separate playable files, not just
+links into a chapter video. A singleton section reuses the chapter video.
+Files use hierarchy-first names such as `01-Chapter_title.mp4`,
+`01_01-First_section.mp4`, `01_02-Second_section.mp4`, then `02-Next_chapter.mp4`,
+so sorting by name keeps each chapter before its sections.
+Existing exports are unchanged. **Saved exports** is collapsible and starts closed.
+
+**Saved-file management:** **Extra options > Manage saved files** lists saved
+uploads/projects and exports with confirmed deletion. When deleting an upload,
+the checkbox offers either keeping completed exports or deleting them too.
+Its transcript versions, chapters, slides and captions are removed; independent
+chapter projects are kept. Running jobs cannot be deleted. Individual saved
+exports also have a **Delete** action beside their download.
+
+**Screenshots:** **Take screenshot** beside the video controls saves the current
+frame as a PNG without pausing playback. It works at any loaded time, independently
+of detected slides. Browser-rendered selectable subtitles and controls are not
+part of the video pixels; burned captions are captured. Slide downloads use short,
+descriptive names such as `Slide_002_Short_descriptive_example.jpg`, without video IDs.
 
 **Whole-video summary:** In the Chapters tab, **Generate summary** creates one
 short paragraph covering the entire open transcript, in its language. Long
@@ -571,7 +607,7 @@ Left/Right (five seconds), Home or End. A playback cursor follows the video.
 The timeline updates when switching transcript versions or renaming speakers
 and is hidden for transcripts without speaker labels.
 
-**Chapter projects:** Each chapter row offers **Open as project**. It creates an
+**Chapter projects:** Each chapter row's **Actions** menu offers **Open as project**. It creates an
 independent MP4 of that chapter, copies overlapping transcript cues with timing
 reset to zero, and copies available slide images, custom titles and saved OCR.
 The slide already visible at the chapter start becomes the first slide at zero.
@@ -583,6 +619,14 @@ project opens automatically only if you are still viewing its parent; otherwise
 use **Open chapter project**. It remains available in **Saved uploads** after a
 server restart, and all normal transcription, chapter, slide and export tools work
 on it. Creating a long chapter project still requires video encoding.
+**Cancel encoding** stops the active project encoder and cleans incomplete output,
+without modifying the parent. Cancellation is no longer available once encoding
+has finished and the project is being saved. The selected captioned video copy is
+used as the source, not silently replaced by the original. Embedded subtitle tracks
+survive chapter extraction, including nested chapter projects; matching rebased
+WebVTT tracks keep them visible in the browser. The visible caption track is kept
+as the default. The download-arrow button on each chapter saves just that chapter
+as an MP4 without creating a new project or exporting the whole lecture.
 
 Automatic chapter and translation fallbacks include Gemini 3.5 Flash-Lite
 instead of the retired Gemini 2.5 models. Provider quota limits and temporary

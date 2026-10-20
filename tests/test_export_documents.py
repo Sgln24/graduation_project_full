@@ -136,6 +136,36 @@ class ExportDocumentTests(unittest.TestCase):
         self.assertEqual(" ".join(text for chunk in chunks for text in chunk),
                          " ".join(item["text"] for item in self.transcript))
 
+    def test_explicit_video_scopes_have_separate_playable_parts_and_no_broken_links(self):
+        chapters = [{"timestamp": "00:00", "title": "Chapter", "user_edited": True, "sections": [
+            {"timestamp": "00:00", "title": "Opening", "point": "Alpha"},
+            {"timestamp": "00:08", "title": "Closing", "point": "Beta", "timestamp_edited": True}]}]
+        self.functions["SUMMARIES_DIR"].joinpath("lecture.json").write_text(json.dumps(chapters))
+        for scope, expected in (("chapters", 1), ("parts", 2), ("both", 3)):
+            response = self.run_export(include_webpage=True, video_scope=scope, subpart_mode="points")
+            with zipfile.ZipFile(response.path) as archive:
+                files = archive.namelist()
+                webpage = archive.read("index.html").decode()
+            self.assertEqual(len([name for name in files if name.endswith(".mp4")]), expected, scope)
+            for source in re.findall(r'<video[^>]+src="([^"]+)"', webpage):
+                self.assertIn(source, files)
+            for target in re.findall(r'data-video="([^"]+)"', webpage):
+                self.assertIn(f'id="{target}"', webpage)
+            self.assertEqual(webpage.count('class="section-video"'), 0 if scope == "chapters" else 2)
+
+    def test_single_section_is_not_repeated_and_uses_one_video_in_all_scopes(self):
+        self.functions["SUMMARIES_DIR"].joinpath("lecture.json").write_text(json.dumps([
+            {"timestamp": "00:00", "title": "Only chapter", "user_edited": True,
+             "sections": [{"timestamp": "00:00", "title": "Only section", "point": "Keep this text"}]}]))
+        for scope in ("chapters", "parts", "both"):
+            response = self.run_export(include_webpage=True, video_scope=scope, subpart_mode="points")
+            with zipfile.ZipFile(response.path) as archive:
+                webpage = archive.read("index.html").decode()
+                self.assertEqual(len([name for name in archive.namelist() if name.endswith(".mp4")]), 1)
+            self.assertNotIn('<details class="chapter-subparts"', webpage)
+            self.assertNotIn('Only section</h3>', webpage)
+            self.assertIn("Keep this text", webpage)
+
     def test_manual_chapter_and_section_timestamps_are_not_sentence_aligned(self):
         boundaries = self.functions["chapter_boundaries_from_topics"]([
             {"timestamp": "00:01.500", "title": "Edited", "timestamp_edited": True,
@@ -742,7 +772,8 @@ class ExportDocumentTests(unittest.TestCase):
             document = Document(BytesIO(archive.read("chapter_document.docx")))
         self.assertEqual(len(calls), 2)
         self.assertEqual(webpage.count("This chapter teaches neural network fundamentals."), 2)
-        self.assertEqual(webpage.count('<details class="chapter-subparts"'), 2)
+        self.assertEqual(webpage.count('<details class="chapter-subparts"'), 1,
+                         "A chapter with a single section must not repeat the section heading")
         document_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
         self.assertEqual(
             document_text.count(
@@ -793,22 +824,26 @@ class ExportDocumentTests(unittest.TestCase):
     def test_section_clips_are_encoded_and_shown_under_each_section(self):
         self.write_sectioned_summary()
         response = self.run_export(include_webpage=True, include_section_clips=True, subpart_mode="points")
-        section_commands = [command for command in self.media_commands if re.search(r"_\d\d\.mp4$", command[-1])]
+        section_commands = [command for command in self.media_commands if re.search(r"\d\d_\d\d-", Path(command[-1]).name)]
         self.assertEqual([Path(command[-1]).name for command in section_commands],
-                         ["01_Neural_networks_01.mp4", "01_Neural_networks_02.mp4"])
+                         ["01_01-Learning_from_examples.mp4", "01_02-Weight_updates.mp4"])
         # The second section clip starts one second before its sentence (overlap).
         start = float(section_commands[1][section_commands[1].index("-ss") + 1])
         self.assertTrue(3.0 <= start < 5.0, start)
         with zipfile.ZipFile(response.path) as archive:
             names = archive.namelist()
             webpage = archive.read("index.html").decode()
-        self.assertIn("01_Neural_networks_02.mp4", names)
-        self.assertIn('class="section-video" controls preload="none" src="01_Neural_networks_02.mp4"', webpage)
+        self.assertIn("01_02-Weight_updates.mp4", names)
+        self.assertIn('class="section-video" controls preload="none" src="01_02-Weight_updates.mp4"', webpage)
+        self.assertEqual(sorted(name for name in names if name.endswith(".mp4")), [
+            "01-Neural_networks.mp4", "01_01-Learning_from_examples.mp4",
+            "01_02-Weight_updates.mp4", "02-Evaluation.mp4",
+        ], "Folder order puts each chapter before its hierarchically numbered sections")
         self.assertEqual(webpage.count('class="section-video"'), 2)
 
         response = self.run_export(include_section_clips=True)
         with zipfile.ZipFile(response.path) as archive:
-            self.assertIn("01_Neural_networks_01.mp4", archive.namelist())
+            self.assertIn("01_01-Learning_from_examples.mp4", archive.namelist())
 
     def test_arabic_transcript_exports_right_to_left(self):
         arabic = "\u0627\u0644\u0634\u0628\u0643\u0627\u062a \u0627\u0644\u0639\u0635\u0628\u064a\u0629 \u062a\u062a\u0639\u0644\u0645 \u0645\u0646 \u0627\u0644\u0623\u0645\u062b\u0644\u0629."

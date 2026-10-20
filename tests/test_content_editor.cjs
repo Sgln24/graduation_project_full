@@ -2,132 +2,50 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-
-class Element {
-    constructor(tag = '') {
-        this.tag = tag;
-        this.children = [];
-        this.listeners = {};
-        this.value = '';
-        this.textContent = '';
-    }
-    addEventListener(name, handler) {
-        (this.listeners[name] ||= []).push(handler);
-    }
-    async emit(name, event = {}) {
-        for (const handler of this.listeners[name] || []) await handler(event);
-    }
-    click() { return this.emit('click'); }
-    appendChild(child) { this.children.push(child); }
-    replaceChildren() { this.children = []; }
-    focus() {}
-    close() { this.open = false; }
-    showModal() { this.open = true; }
-    querySelector() { return null; }
-    inputs() {
-        return this.children.flatMap(child => ['input', 'textarea'].includes(child.tag) ? [child] : child.inputs());
-    }
-}
-
-const ids = {};
-for (const id of ['contentEditorDialog', 'contentEditorForm', 'contentEditorRows', 'contentEditorError',
-    'saveContentEditsBtn', 'cancelContentEditsBtn', 'discardContentEditsBtn', 'contentEditorHeading',
-    'contentEditorHelp', 'transcriptVersionSelect', 'edit-transcript-btn', 'edit-chapters-btn', 'edit-slides-btn']) {
-    ids[id] = new Element();
-}
-const state = {
-    currentVideoId: 'video', currentTranscriptSource: 'whisper',
-    currentTranscript: [{start: 0, duration: 4, text: 'Original', speaker: 'A'}],
-    videoChapters: [{timestamp: '00:00', title: 'Chapter', sections: []}],
-    videoScenes: [{time_seconds: 0, index: 0}],
-};
-let fail = false;
-const requests = [];
-const events = {};
-const context = vm.createContext({
-    state, elements: {}, URLSearchParams,
-    document: {
-        getElementById: id => ids[id],
-        createElement: tag => new Element(tag),
-        addEventListener: (name, handler) => { events[name] = handler; },
-        querySelectorAll: () => [],
-    },
-    openOptionsDialog: dialog => { dialog.open = true; },
-    loadTranscript: content => { state.currentTranscript = content; },
-    updateChapters: content => { state.videoChapters = content; },
-    updateScenes: content => { state.videoScenes = content; },
-    attachChapterSlides() {}, showNotification() {}, refreshTranscriptVersions: async () => {},
-    contentLanguage: (_, __, language) => language || '',
-    slideTitle: scene => scene.title || '',
-    sceneTopicTitle: () => '',
-    fetch: async (url, options) => {
-        requests.push({url, options});
-        const kind = options ? JSON.parse(options.body).kind : new URLSearchParams(url.split('?')[1]).get('kind');
-        const original = kind === 'transcript' ? state.currentTranscript
-            : kind === 'slides' ? state.videoScenes : state.videoChapters;
-        const edits = options ? JSON.parse(options.body).edits : null;
-        return {
-            ok: !options || !fail,
-            json: async () => fail && options ? {detail: 'Save conflict'} : {
-                revision: 'revision',
-                content: edits ? original.map((item, i) => kind === 'transcript'
-                    ? {...item, text: edits[i]} : kind === 'slides' ? {...item, title: edits[i]} : edits[i])
-                    : kind === 'slides' ? original.map(({index, ...scene}) => scene) : original,
-                version: {id: 'edited', kind: 'transcript', source: 'whisper'},
-            },
-        };
-    },
-});
 const source = fs.readFileSync(path.join(__dirname, '..', 'static', 'js', 'content-editor.js'), 'utf8')
     .replace(/^import .+;$/gm, '').replace(/^export /gm, '');
+const context = vm.createContext({});
 vm.runInContext(source, context);
-context.initContentEditor();
-const submit = () => ids.contentEditorForm.emit('submit', {preventDefault() {}});
-
-(async () => {
-    assert.equal(ids['edit-transcript-btn'].disabled, false);
-    await ids['edit-transcript-btn'].click();
-    const text = ids.contentEditorRows.inputs()[0];
-    assert.equal(text.value, 'Original');
-    text.value = 'Corrected';
-    await ids.contentEditorForm.emit('input');
-    await ids.cancelContentEditsBtn.click();
-    assert.equal(ids.contentEditorDialog.open, true);
-    assert.equal(ids.discardContentEditsBtn.hidden, false);
-    let prevented = false;
-    await ids.contentEditorDialog.emit('cancel', {preventDefault() { prevented = true; }});
-    assert.equal(prevented, true);
-    fail = true;
-    await submit();
-    assert.equal(ids.contentEditorDialog.open, true);
-    assert.equal(ids.contentEditorError.textContent, 'Save conflict');
-    assert.equal(state.currentTranscript[0].text, 'Original');
-    fail = false;
-    await submit();
-    assert.equal(ids.contentEditorDialog.open, false);
-    assert.equal(state.currentTranscript[0].text, 'Corrected');
-    assert.equal(state.currentTranscript[0].speaker, 'A');
-    assert.equal(state.currentTranscript[0].duration, 4);
-    assert.equal(state.currentTranscriptVersionId, 'edited');
-    await ids['edit-transcript-btn'].click();
-    state.currentVideoId = 'different';
-    const count = requests.length;
-    await submit();
-    assert.equal(requests.length, count, 'Do not save into a changed selection');
-    assert.match(ids.contentEditorError.textContent, /changed/);
-    await ids.cancelContentEditsBtn.click();
-    assert.equal(ids.contentEditorDialog.open, false);
-    state.currentVideoId = 'video';
-    await ids['edit-chapters-btn'].click();
-    ids.contentEditorRows.inputs()[0].value = 'Edited chapter';
-    await submit();
-    assert.equal(state.videoChapters[0].title, 'Edited chapter');
-    await ids['edit-slides-btn'].click();
-    ids.contentEditorRows.inputs()[0].value = 'Edited slide';
-    await submit();
-    assert.equal(state.videoScenes[0].title, 'Edited slide');
-    state.currentTranscript = [];
-    events.transcriptUpdated();
-    assert.equal(ids['edit-transcript-btn'].disabled, true);
-    console.log('PASS: content editors save, cancel, discard warning, conflicts, context guards and metadata');
-})().catch(error => { console.error(error); process.exitCode = 1; });
+const outline = [
+    {timestamp: '00:00', title: 'First', summary: 'One', sections: [
+        {timestamp: '00:00', title: 'A', point: 'Alpha'},
+        {timestamp: '00:10', title: 'B', point: 'Beta'},
+        {timestamp: '00:20', title: 'C', point: 'Gamma'}]},
+    {timestamp: '00:30', title: 'Second', summary: 'Two', sections: [
+        {timestamp: '00:30', title: 'D', point: 'Delta'},
+        {timestamp: '00:40', title: 'E', point: 'Epsilon'}]},
+];
+const apply = op => JSON.parse(JSON.stringify(context.applyOutlineOperation(outline, op)));
+const merged = apply({action: 'merge_section', chapter: 0, section: 0});
+assert.equal(merged[0].sections.length, 2);
+assert.equal(merged[0].sections[0].title, 'A');
+assert.equal(merged[0].sections[0].timestamp, '00:00');
+assert.match(merged[0].sections[0].point, /Alpha[\s\S]*B[\s\S]*Beta/);
+const chapter = apply({action: 'merge_chapter', chapter: 0});
+assert.equal(chapter.length, 1);
+assert.equal(chapter[0].title, 'First');
+assert.equal(chapter[0].sections.length, 5);
+const promoted = apply({action: 'promote', chapter: 0, section: 1});
+assert.equal(promoted.length, 3);
+assert.equal(promoted[1].title, 'B');
+assert.equal(promoted[1].timestamp, '00:10');
+assert.equal(promoted[0].sections.length, 1);
+const forward = apply({action: 'move_section', chapter: 0, section: 2, target: 1});
+assert.equal(forward[1].timestamp, '00:20');
+assert.equal(forward[1].sections[0].title, 'C');
+const back = apply({action: 'move_section', chapter: 1, section: 0, target: 0});
+assert.equal(back[1].timestamp, '00:40');
+assert.equal(back[0].sections.at(-1).title, 'D');
+assert.throws(() => apply({action: 'move_section', chapter: 0, section: 1, target: 1}), /video order/);
+assert.throws(() => apply({action: 'promote', chapter: 0, section: 0}), /already starts/);
+assert.equal(outline[0].sections.length, 3, 'Draft transforms must not mutate the saved source');
+const retimed = JSON.parse(JSON.stringify(outline));
+retimed[0].sections[1].timestamp = '00:00';
+assert.throws(() => context.applyOutlineOperation(retimed, {action: 'promote', chapter: 0, section: 1}, outline),
+    /Save timestamp changes/, 'Regrouping must not replay against different saved boundaries');
+const renamed = JSON.parse(JSON.stringify(outline));
+renamed[0].sections[1].title = 'Renamed';
+assert.equal(context.applyOutlineOperation(renamed, {action: 'promote', chapter: 0, section: 1}, outline)[1].title, 'Renamed');
+assert(!source.includes('showModal'), 'Content editing never opens a popup');
+assert(source.includes("['chapters', 'slides', 'transcript']"));
+console.log('PASS: inline outline transforms preserve timing, text, source and chronological grouping');

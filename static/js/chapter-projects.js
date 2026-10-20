@@ -2,6 +2,8 @@ import { state } from './main.js';
 import { loadUploadedVideo } from './api-module.js';
 import { showError, showNotification } from './ui.js';
 import { contentLanguage } from './content-languages.js';
+import { saveBlobToUserLocation } from './utils.js';
+import { selectedMediaExportId, selectedCaptionTrackIndex } from './caption-export.js';
 
 const storageKey = 'lectureseek-chapter-project-job';
 let pending = null;
@@ -27,6 +29,8 @@ function render(message, project = null) {
     status.textContent = message;
     open.hidden = !project;
     open.onclick = project ? () => void openProject(project) : null;
+    const cancel = document.getElementById('cancelChapterProjectBtn');
+    if (cancel) cancel.hidden = !pending || Boolean(pending.ready);
 }
 
 async function openProject(project) {
@@ -70,6 +74,12 @@ async function checkJob() {
             savePending();
             throw new Error(job.error || 'Chapter project creation failed.');
         }
+        if (job.status === 'cancelled') {
+            pending = null;
+            savePending();
+            render('Chapter project cancelled. The original lecture is unchanged.');
+            return;
+        }
         const step = job.steps?.at(-1)?.message || 'Preparing chapter project';
         render(`${step} (${Math.floor(job.elapsed || 0)}s elapsed)`);
         timer = setTimeout(() => void checkJob(), 2000);
@@ -90,6 +100,10 @@ export function createChapterProjectButton(chapter, index, chapters) {
     button.title = 'Create a separate project with this chapter video, transcript and available slides';
     button.addEventListener('click', async event => {
         event.stopPropagation();
+        if (button.closest('.is-inline-editing')) {
+            showError('Save or cancel your edits before opening a chapter project.');
+            return;
+        }
         if ((pending && !pending.ready) || starting) {
             showNotification('A chapter project is already being created. Its progress is shown above.', 'info');
             return;
@@ -103,6 +117,8 @@ export function createChapterProjectButton(chapter, index, chapters) {
             source: state.currentTranscriptSource === 'uploaded' ? 'uploaded'
                 : state.currentTranscriptSource === 'youtube' ? 'youtube' : 'whisper',
             transcript_version_id: state.currentTranscriptVersionId || '',
+            media_export_id: selectedMediaExportId(parentId),
+            caption_track_index: selectedCaptionTrackIndex(),
         };
         button.disabled = true;
         starting = true;
@@ -130,6 +146,19 @@ export function createChapterProjectButton(chapter, index, chapters) {
 }
 
 export function initChapterProjects() {
+    document.getElementById('cancelChapterProjectBtn')?.addEventListener('click', async event => {
+        if (!pending || pending.ready) return;
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+            const response = await fetch(`/chapter_project_jobs/${encodeURIComponent(pending.jobId)}/cancel`, {method: 'POST'});
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Could not cancel chapter project.');
+            render('Stopping chapter encoding and removing incomplete output...');
+        } catch (error) {
+            showError(error.message);
+        } finally { button.disabled = false; }
+    });
     const saved = localStorage.getItem(storageKey);
     if (!saved) return;
     try {
@@ -144,4 +173,61 @@ export function initChapterProjects() {
         localStorage.removeItem(storageKey);
         showError(`Could not restore chapter project progress: ${error.message}`);
     }
+}
+
+export function createChapterDownloadButton(chapter, index, chapters) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-secondary btn-action btn-icon chapter-video-download';
+    button.innerHTML = '<i class="fas fa-download" aria-hidden="true"></i>';
+    button.title = 'Download chapter video';
+    button.setAttribute('aria-label', 'Download chapter video');
+    button.addEventListener('click', async event => {
+        event.stopPropagation();
+        if (button.closest('.is-inline-editing')) {
+            showError('Save or cancel your edits before downloading a chapter.');
+            return;
+        }
+        button.disabled = true;
+        const videoId = state.currentVideoId;
+        const status = document.getElementById('chapterProjectStatus');
+        try {
+            const response = await fetch(`/chapter_video/${encodeURIComponent(videoId)}`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    chapter_index: index, title: chapter.title, timestamp: chapter.timestamp,
+                    next_timestamp: chapters[index + 1]?.timestamp || null,
+                    chapter_language: contentLanguage(videoId, 'chapters', state.currentTranslationLanguage),
+                    language: state.currentTranslationLanguage || '',
+                    source: state.currentTranscriptSource === 'uploaded' ? 'uploaded'
+                        : state.currentTranscriptSource === 'youtube' ? 'youtube' : 'whisper',
+                    transcript_version_id: state.currentTranscriptVersionId || '',
+                    media_export_id: selectedMediaExportId(videoId),
+                    caption_track_index: selectedCaptionTrackIndex(),
+                }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail || 'Could not prepare chapter video.');
+            while (true) {
+                const response = await fetch(`/chapter_video_jobs/${encodeURIComponent(data.job_id)}`);
+                const job = await response.json();
+                if (!response.ok || job.status === 'error') throw new Error(job.detail || job.error || 'Chapter video encoding failed.');
+                if (state.currentVideoId === videoId) {
+                    status.hidden = false;
+                    status.textContent = job.steps?.at(-1)?.message || 'Preparing chapter video...';
+                }
+                if (job.status === 'complete') {
+                    const download = await fetch(job.download_url);
+                    if (!download.ok) throw new Error('Could not download the chapter video.');
+                    await saveBlobToUserLocation(await download.blob(), job.filename);
+                    if (state.currentVideoId === videoId) status.textContent = 'Chapter video ready.';
+                    break;
+                }
+                await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError') showError(error.message);
+        } finally { button.disabled = false; }
+    });
+    return button;
 }
