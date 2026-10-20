@@ -25,7 +25,9 @@ const state = {currentVideoId: 'video', currentTranscriptSource: 'whisper'};
 const requests = [], errors = [];
 const context = vm.createContext({
     state, showError: message => errors.push(message), showNotification() {},
-    clearChapterMarkers() {}, updateChapters() {},
+    clearChapterMarkers() {}, updateChapters: chapters => { state.videoChapters = chapters; },
+    contentLanguage: (_, __, language) => language || '',
+    savedSummaryUrl: (id, language) => `/summary/${id}` + (language ? `?language=${language}` : ''),
     loadTranscript: transcript => { state.currentTranscript = transcript; },
     fetch: (url, options) => new Promise((resolve, reject) => requests.push({url, options, resolve, reject})),
     document: {getElementById: id => ids[id], createElement: element, dispatchEvent() {}, addEventListener() {}},
@@ -53,7 +55,11 @@ const reply = (request, data) => request.resolve({ok: true, json: async () => da
     assert.equal(ids.captionTranscriptVersionSelect.disabled, true);
     assert.equal(ids.transcriptVersionSelect.disabled, true);
     reply(requests.at(-1), {version: translation, transcript: [{start: 0, text: 'Deutsch'}], chapters: []});
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(requests.at(-1).url, '/summary/video?language=de');
+    reply(requests.at(-1), {success: true, exists: true, chapters: [{title: 'Saved fallback chapter'}]});
     await switching;
+    assert.equal(state.videoChapters[0].title, 'Saved fallback chapter', 'Missing version chapters load the same saved fallback used by editors');
     assert.equal(state.currentTranslationLanguage, 'de');
     assert.equal(state.currentTranscript[0].text, 'Deutsch');
     reply(requests.at(-1), {versions});

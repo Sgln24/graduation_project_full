@@ -458,6 +458,16 @@
                             </button>
                             <button id="summaryOptionsBtn" class="btn btn-secondary btn-options" type="button">Chapter options</button>
                             <button id="edit-chapters-btn" class="btn btn-secondary btn-action" type="button" disabled>Edit chapters</button>
+                            <button id="enhanceChaptersBtn" class="btn btn-secondary btn-action" type="button" disabled>Enhance chapters</button>
+                            <label for="contentTranslationTarget">Title translation language</label>
+                            <select id="contentTranslationTarget">
+                                <option value="transcript" selected>Open transcript's language</option>
+                                <option value="en">English</option>
+                                <option value="de">German</option>
+                                <option value="ar">Arabic</option>
+                                <option value="pl">Polish</option>
+                            </select>
+                            <button id="translateChaptersBtn" class="btn btn-secondary btn-action" type="button" disabled>Translate chapters and sections</button>
                             <label title="Show already detected slides beneath chapters and sections. Does not detect slides or run OCR.">
                                 <input type="checkbox" id="chapterSlidesToggle"> Add detected slides
                             </label>
@@ -470,6 +480,11 @@
                                     <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash-Lite</option>
                                     <option value="groq:openai/gpt-oss-120b">Groq GPT-OSS 120B (free)</option>
                                     <option value="gpt-4.1-mini">OpenAI GPT-4.1 mini (paid)</option>
+                                </select>
+                                <label for="chapterPasses">Generation passes</label>
+                                <select id="chapterPasses">
+                                    <option value="one" selected>One pass: faster topic generation</option>
+                                    <option value="two">Two passes: generate, then review topic boundaries</option>
                                 </select>
                                 <label for="chapterStructure">Structure</label>
                                 <select id="chapterStructure">
@@ -527,9 +542,9 @@
                                 </select>
                                 <label for="subpartMode">Sections inside each part:</label>
                                 <select id="subpartMode">
-                                    <option value="points" selected>Important points/topics</option>
+                                    <option value="points">Important points/topics</option>
                                     <option value="slides">Slide changes inside each part</option>
-                                    <option value="both">Important points and slide changes</option>
+                                    <option value="both" selected>Important points and slide changes</option>
                                 </select>
                                 <label title="Each clip starts 1 second early so the first words of a sentence are not cut off"><input type="checkbox" id="exportClipOverlap" checked> Start clips 1 second early</label>
                                 <label title="Adds the text read from each slide (OCR) as a bullet list under its chapter. Run text extraction on the slides first."><input type="checkbox" id="exportSlideText"> Include slide text (OCR)</label>
@@ -559,6 +574,8 @@
                                 </form>
                             </dialog>
                         </div>
+                        <p id="chapterProjectStatus" role="status" aria-live="polite" hidden></p>
+                        <button id="openChapterProjectBtn" class="btn btn-secondary btn-action" type="button" hidden>Open chapter project</button>
                         <div class="tab-body" id="chaptersContainer">
                             <div id="summaryStatus" class="summary-status" role="status" aria-live="polite"></div>
                             <p>Click "Generate Summary" to create chapter markers from the transcript.</p>
@@ -576,6 +593,15 @@
                     <div class="tab-pane" id="scenes-tab">
                         <div class="controls-bar">
                             <button id="edit-slides-btn" class="btn btn-secondary btn-action" type="button" disabled>Edit slide titles</button>
+                            <label for="slideTranslationTarget">Slide title language</label>
+                            <select id="slideTranslationTarget">
+                                <option value="transcript" selected>Open transcript's language</option>
+                                <option value="en">English</option>
+                                <option value="de">German</option>
+                                <option value="ar">Arabic</option>
+                                <option value="pl">Polish</option>
+                            </select>
+                            <button id="translateSlideTitlesBtn" class="btn btn-secondary btn-action" type="button" disabled>Translate slide titles</button>
                             <button id="detectScenesBtn" class="btn btn-secondary btn-action" disabled>
                                 <i class="fas fa-film"></i> Detect Slides
                             </button>

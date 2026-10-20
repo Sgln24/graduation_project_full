@@ -373,6 +373,18 @@ code {
     gap: 12px;
 }
 
+.chapter-project-button {
+    margin-inline-start: auto;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    padding: 4px 8px;
+}
+
+#chapterProjectStatus {
+    padding: 8px 12px;
+    overflow-wrap: anywhere;
+}
+
 #contentEditorRows fieldset {
     min-width: 0;
     border: 1px solid var(--border-strong);

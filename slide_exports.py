@@ -98,8 +98,9 @@ def build_slide_archive(video_id, indices, scenes_dir, images_dir):
     return output
 
 
-def build_slide_transcript_html(video_id, transcript, scenes_dir, images_dir, title):
-    scenes = load_download_slides(video_id, scenes_dir)
+def build_slide_transcript_html(video_id, transcript, scenes_dir, images_dir, title, slide_title_language=""):
+    from content_languages import localized_scenes
+    scenes = localized_scenes(load_download_slides(video_id, scenes_dir), slide_title_language)
     if not isinstance(transcript, list) or not transcript:
         raise SlideExportError(400, "A transcript is required for the screenshots and transcript HTML.")
     ordered = sorted(range(len(scenes)), key=lambda index: (slide_seconds(scenes[index]), index))

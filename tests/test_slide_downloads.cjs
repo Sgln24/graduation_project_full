@@ -24,6 +24,7 @@ const context = vm.createContext({
     startElapsedTimer: () => () => {},
     state, console,
     document: {createElement: element, getElementById: () => wordButton},
+    contentLanguage: (_, __, language) => language || '',
     fetch: async (url, options) => {
         requests.push({url, options});
         return {ok: true, blob: async () => 'blob'};
@@ -81,7 +82,7 @@ const event = () => ({stopped: false, prevented: false,
     context.setupSlideTextDownload(2);
     assert(!wordButton.disabled);
     await context.downloadSlideTextWord();
-    assert.equal(requests[4].url, '/download_slide_text_docx/changed-video?transcript_language=de');
+    assert.equal(requests[4].url, '/download_slide_text_docx/changed-video?chapter_language=de');
     assert(saves[4].filename.endsWith('_slide_text.docx'));
     assert.equal(wordButton.innerHTML, 'Export Word');
     context.fetch = async () => ({ok: false, json: async () => ({detail: 'Missing screenshot'})});

@@ -15,14 +15,20 @@ export function conciseTitle(title, limit = 36) {
     return `${split > 0 ? prefix.slice(0, split) : prefix}...`;
 }
 
-export function navigationParts(chapters = [], scenes = [], mode = 'topic') {
+export function slideTitle(scene, language = '') {
+    const translated = scene.title_translations || {};
+    if (language && Object.hasOwn(translated, language)) return translated[language];
+    return !language || !scene.title_language || scene.title_language === language ? scene.title || '' : '';
+}
+
+export function navigationParts(chapters = [], scenes = [], mode = 'topic', language = '') {
     const topics = chapters.map((chapter) => ({start: chapterStart(chapter), title: chapter.title}))
         .filter((part) => Number.isFinite(part.start)).sort((a, b) => a.start - b.start);
     const slides = scenes.map((scene, index) => {
         const topic = topics.filter((part) => part.start <= scene.time_seconds).at(-1);
         return {
             start: Number(scene.time_seconds),
-            title: scene.title || `${index + 1}${topic?.title ? `: ${topic.title}` : ''}`,
+            title: slideTitle(scene, language) || `${index + 1}${topic?.title ? `: ${topic.title}` : ''}`,
         };
     }).filter((part) => Number.isFinite(part.start));
     // Before chapters are generated, content mode falls back to slide changes so navigation still works.

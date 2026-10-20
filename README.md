@@ -521,11 +521,51 @@ chapter quotas, short-chapter duration merges, or forced section limits.
 Unequal chapter lengths are valid; percentages of lecture duration are only
 informational, never a reason to force a split or merge. Long transcript request
 parts carry the current chapter's context so technical boundaries do not imply
-new topics.
-Topic grouping is requested in the initial generation, with no second AI
-review or fixed cap on genuinely distinct topics. This applies when generating
-chapters, not retroactively to saved chapters. Slide-based export sections
-still follow the detected slide changes.
+new topics. They also carry the current subsection and its takeaways: continued
+explanations extend that subsection rather than appending another timestamp.
+One demonstration or workflow (including its steps, examples and clarifying
+Q&A) stays together unless the instructional subject genuinely changes.
+Adjacent duplicate chapter/subsection headings are coalesced, retaining their
+takeaways and the first timestamp.
+Topic grouping is requested in the initial generation, with no fixed cap on
+genuinely distinct topics. **Chapter options > Generation passes** offers
+**One pass** (the faster default) or **Two passes** (generation followed by
+an AI review of topic boundaries). **Enhance chapters** reviews an already
+saved outline without regenerating the transcript or dropping its takeaways.
+These actions are explicit; existing outlines are not silently rewritten.
+
+**Editing:** **Edit chapters**, **Edit slide titles** and **Edit transcript**
+open a modal editor. Change the fields inside it and choose **Save edits**;
+the main headings are not inline-editable. Cancel/discard leaves saved content
+unchanged, and concurrent saved edits prevent stale overwrites.
+
+**Languages:** Generate chapters always uses the open transcript, not an older
+transcript or the interface language. **Translate chapters and sections** and
+**Translate slide titles** translate saved text directly, retaining timestamps,
+structure, slide images and OCR. Choose **Open transcript's language** or an
+independent English/German/Arabic/Polish target. Slide titles derived from chapter
+topics can be translated too. Chapter and slide-title display language choices
+are remembered separately for each video in this browser; translations themselves
+are saved on the server. Editing and new exports use the selected content languages.
+Generating new chapters returns chapter display to the open transcript's language.
+Older mismatched outlines need an explicit translation or regeneration.
+
+**Export defaults:** Content chapters remain the top-level parts, with saved
+topic sections and slide-change sections included by default. Saved sections
+are reused even when slide changes are included, avoiding unnecessary AI calls.
+
+**Chapter projects:** Each chapter row offers **Open as project**. It creates an
+independent MP4 of that chapter, copies overlapping transcript cues with timing
+reset to zero, and copies available slide images, custom titles and saved OCR.
+The slide already visible at the chapter start becomes the first slide at zero.
+When a translation is selected, both it and the original transcript are copied
+when available. Speakers are retained; parent chapters are not copied so you can
+generate a fresh outline for the excerpt. The parent project is never changed.
+Creation reports encoding progress and reconnects after a page reload. The new
+project opens automatically only if you are still viewing its parent; otherwise
+use **Open chapter project**. It remains available in **Saved uploads** after a
+server restart, and all normal transcription, chapter, slide and export tools work
+on it. Creating a long chapter project still requires video encoding.
 
 Automatic chapter and translation fallbacks include Gemini 3.5 Flash-Lite
 instead of the retired Gemini 2.5 models. Provider quota limits and temporary

@@ -39,14 +39,16 @@ def _revision(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def _snapshot(video_id, kind, language, source, version_id):
+def _snapshot(video_id, kind, language, source, version_id, transcript_language=None):
+    selected_language = language if transcript_language is None else transcript_language
     if not all(isinstance(value, str) for value in (video_id, kind, language, source, version_id)):
         raise HTTPException(400, "Content type, source, language and version must be strings.")
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", video_id):
         raise HTTPException(400, "Invalid video ID.")
     if kind not in {"chapters", "slides", "transcript"}:
         raise HTTPException(400, "Invalid content type.")
-    if language not in {"", "en", "de", "ar", "pl"} or source not in {"whisper", "uploaded", "youtube"}:
+    if (language not in {"", "en", "de", "ar", "pl"} or not isinstance(selected_language, str)
+            or selected_language not in {"", "en", "de", "ar", "pl"} or source not in {"whisper", "uploaded", "youtube"}):
         raise HTTPException(400, "Invalid transcript source or language.")
     if kind == "slides":
         scenes = _read(SCENES_DIR / f"{video_id}.json", [])
@@ -60,19 +62,19 @@ def _snapshot(video_id, kind, language, source, version_id):
             raise HTTPException(409, "The selected transcript version no longer exists. Reload it.") from error
         except (OSError, ValueError) as error:
             raise HTTPException(500, "Could not read the selected transcript version.") from error
-        if (entry.get("language") or "") != language:
+        if (entry.get("language") or "") != selected_language:
             raise HTTPException(409, "The selected transcript language changed. Reopen the editor.")
-        if not language and entry.get("source") != source:
+        if not selected_language and entry.get("source") != source:
             raise HTTPException(409, "The selected transcript source changed. Reopen the editor.")
-        active_path = (TRANSCRIPTS_DIR / f"{video_id}_translated_{language}.json" if language
+        active_path = (TRANSCRIPTS_DIR / f"{video_id}_translated_{selected_language}.json" if selected_language
                        else TRANSCRIPTS_DIR / f"{video_id}_{source}.json")
         if _read(active_path) != transcript:
             raise HTTPException(409, "Another transcript version is now active. Reload it before editing.")
     else:
-        path = (TRANSCRIPTS_DIR / f"{video_id}_translated_{language}.json" if language
+        path = (TRANSCRIPTS_DIR / f"{video_id}_translated_{selected_language}.json" if selected_language
                 else TRANSCRIPTS_DIR / f"{video_id}_{source}.json")
         transcript = _read(path)
-        if transcript is None and source == "youtube" and not language:
+        if transcript is None and source == "youtube" and not selected_language:
             transcript = _read(TRANSCRIPTS_DIR / f"{video_id}.json", [])
     if not isinstance(transcript, list) or not transcript:
         raise HTTPException(409, "Load a saved transcript before editing this content.")
@@ -80,7 +82,11 @@ def _snapshot(video_id, kind, language, source, version_id):
     if kind == "transcript":
         return transcript, entry
     path = SUMMARIES_DIR / (f"{video_id}_summary_{language}.json" if language else f"{video_id}.json")
-    chapters = _read(path, [])
+    chapters = _read(path)
+    if chapters is None and language:
+        chapters = _read(SUMMARIES_DIR / f"{video_id}.json", [])
+    if chapters is None:
+        chapters = []
     if isinstance(chapters, list) and chapters and isinstance(chapters[0], list):
         if not all(isinstance(group, list) for group in chapters):
             raise HTTPException(500, "Saved chapters have an invalid format.")
@@ -97,9 +103,10 @@ def _rows(value):
 
 
 @router.get("/editable_content/{video_id}")
-def editable_content(video_id: str, kind: str, language: str = "", source: str = "whisper", version_id: str = ""):
+def editable_content(video_id: str, kind: str, language: str = "", source: str = "whisper", version_id: str = "",
+                     transcript_language: str | None = None):
     with _lock:
-        content, _ = _snapshot(video_id, kind, language, source, version_id)
+        content, _ = _snapshot(video_id, kind, language, source, version_id, transcript_language)
         return {"content": content, "revision": _revision(content)}
 
 
@@ -146,6 +153,17 @@ def _chapters(original, edits):
     return result
 
 
+def persist_chapters(video_id, content, context, language, selected_language, source):
+    entry, transcript, path = context
+    version = transcript_versions.save_version(
+        video_id, "translation" if selected_language else "transcript", transcript,
+        source=(entry or {}).get("source") or ("uploaded" if source == "uploaded" else "whisper"),
+        language=selected_language or None, chapters=content,
+    ) if language == selected_language else entry
+    transcript_versions._write_json(path, content)
+    return version
+
+
 @router.post("/editable_content/{video_id}")
 async def save_content_edits(video_id: str, request: Request):
     try:
@@ -157,7 +175,8 @@ async def save_content_edits(video_id: str, request: Request):
     kind, language = data.get("kind"), data.get("language", "")
     source, version_id = data.get("source", "whisper"), data.get("version_id", "")
     with _lock:
-        original, context = _snapshot(video_id, kind, language, source, version_id)
+        selected_language = data.get("transcript_language", language)
+        original, context = _snapshot(video_id, kind, language, source, version_id, selected_language)
         if data.get("revision") != _revision(original):
             raise HTTPException(409, "This content changed since editing started. Reopen the editor to avoid overwriting changes.")
         edits = data.get("edits")
@@ -170,19 +189,18 @@ async def save_content_edits(video_id: str, request: Request):
                 content = []
                 for scene, value in zip(original, edits):
                     title = _text(value, "Slide title", blank=True, limit=500)
-                    content.append({**scene, "title": title, "title_edited": bool(title)})
+                    if language:
+                        content.append({**scene, "title_translations": {
+                            **(scene.get("title_translations") or {}), language: title,
+                        }})
+                    else:
+                        content.append({**scene, "title": title, "title_edited": bool(title)})
                 transcript_versions._write_json(SCENES_DIR / f"{video_id}.json", content)
                 return {"content": content, "revision": _revision(content)}
             transcript_versions.sync_existing(video_id)
             if kind == "chapters":
                 content = _chapters(original, edits)
-                entry, transcript, path = context
-                version = transcript_versions.save_version(
-                    video_id, "translation" if language else "transcript", transcript,
-                    source=(entry or {}).get("source") or ("uploaded" if source == "uploaded" else "whisper"),
-                    language=language or None, chapters=content,
-                )
-                transcript_versions._write_json(path, content)
+                version = persist_chapters(video_id, content, context, language, selected_language, source)
             else:
                 if not isinstance(edits, list) or len(edits) != len(original):
                     raise HTTPException(400, "The transcript segment count must not change.")

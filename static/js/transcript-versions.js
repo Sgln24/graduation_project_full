@@ -4,6 +4,7 @@ import { state } from './main.js';
 import { loadTranscript } from './transcript.js';
 import { updateChapters, clearChapterMarkers } from './chapters.js';
 import { showError, showNotification } from './ui.js';
+import { contentLanguage, savedSummaryUrl } from './content-languages.js';
 
 let versions = [];
 let refreshGeneration = 0;
@@ -124,8 +125,9 @@ function showNoChapters() {
 
 async function loadOriginalChapters(videoId) {
     try {
-        const response = await fetch(`/summary/${encodeURIComponent(videoId)}`);
+        const response = await fetch(savedSummaryUrl(videoId, state.currentTranslationLanguage));
         const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Could not read saved chapters.');
         if (videoId !== state.currentVideoId) return;
         if (data.success && data.exists && Array.isArray(data.chapters) && data.chapters.length) {
             state.videoChapters = data.chapters;
@@ -134,7 +136,7 @@ async function loadOriginalChapters(videoId) {
             showNoChapters();
         }
     } catch (error) {
-        console.warn('Could not reload chapters:', error);
+        if (videoId === state.currentVideoId) showError(`Could not reload chapters: ${error.message}`);
     }
 }
 
@@ -168,13 +170,12 @@ export async function chooseTranscriptVersion(versionId) {
             if (targetSelect) targetSelect.value = '';
         }
         loadTranscript(data.transcript);
-        if (Array.isArray(data.chapters)) {
+        if (contentLanguage(videoId, 'chapters', state.currentTranslationLanguage) !== (state.currentTranslationLanguage || '')
+                || !Array.isArray(data.chapters) || !data.chapters.length) {
+            await loadOriginalChapters(videoId);
+        } else if (Array.isArray(data.chapters)) {
             state.videoChapters = data.chapters;
             updateChapters(data.chapters);
-        } else if (version.kind === 'translation') {
-            showNoChapters();
-        } else {
-            await loadOriginalChapters(videoId);
         }
         showNotification(`Switched to: ${version.label}`, 'success');
     } catch (error) {

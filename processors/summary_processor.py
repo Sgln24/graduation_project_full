@@ -388,11 +388,21 @@ class SummaryProcessor:
 
     @staticmethod
     def _detect_transcript_language(transcript):
-        """Return "ar" for transcripts written mostly in Arabic script, else None."""
+        """Identify clear language evidence; leave ambiguous text to the model."""
         text = " ".join(str(item.get("text", "")) for item in transcript[:300] if isinstance(item, dict))
         letters = [character for character in text if character.isalpha()]
         arabic = sum(1 for character in letters if "\u0600" <= character <= "\u08ff")
-        return "ar" if letters and arabic / len(letters) > 0.3 else None
+        if letters and arabic / len(letters) > 0.3:
+            return "ar"
+        words = re.findall(r"[^\W\d_]+", text.lower())
+        markers = {
+            "en": {"the", "and", "this", "that", "with", "you", "we", "is", "are", "from"},
+            "de": {"der", "die", "das", "und", "ist", "nicht", "eine", "mit", "wir", "sie"},
+            "pl": {"jest", "nie", "oraz", "dla", "przez", "czy", "się", "na", "to", "jak"},
+        }
+        ranked = sorted(((sum(word in group for word in words), language)
+                         for language, group in markers.items()), reverse=True)
+        return ranked[0][1] if ranked[0][0] >= 3 and ranked[0][0] >= ranked[1][0] + 2 else None
 
     @staticmethod
     def _filler_free(text):
@@ -407,6 +417,7 @@ class SummaryProcessor:
         self, transcript: list, video_id: str = None, requested_model: str = None,
         language: str = "transcript", structure: str = "sections", detail: str = "balanced",
         instructions: str = "", transcript_language: str = "",
+        passes: str = "one",
     ):
         """Generate chapters (optionally with sections), preferring configured Groq.
 
@@ -421,6 +432,8 @@ class SummaryProcessor:
                 language = transcript_language or self._detect_transcript_language(transcript or []) or "transcript"
             language_instruction = self._summary_language_instruction(language)
             settings = self._chapter_settings(structure, detail, instructions)
+            if passes not in ("one", "two"):
+                raise ValueError("Chapter generation passes must be one or two.")
             self._refresh_clients()
             chain = self._provider_chain(requested_model, prefer_groq=True)
             if not transcript or not chain:
@@ -452,15 +465,26 @@ class SummaryProcessor:
                     response_text = await self._chunked_chapters(
                         candidate, model, transcript, language_instruction, settings,
                     )
+                    if passes == "two":
+                        draft = self._normalize_chapters(
+                            self._parse_chapter_list(response_text), transcript,
+                            end=transcript_end, sectioned=settings["sections"],
+                        )
+                        reviewed = await self.enhance_chapters(
+                            draft, candidate, model, settings, language_instruction,
+                        )
+                        response_text = json.dumps(reviewed, ensure_ascii=False)
                     provider = self._provider_label(candidate, index)
                     used_model = model
                     break
                 except Exception as error:
                     if isinstance(error, asyncio.TimeoutError):
+                        response_text = None
                         error = RuntimeError(
                             f"no answer within {CHAPTER_TIMEOUT_SECONDS} seconds (the model is busy or slow)"
                         )
                     failures.append(f"{PROVIDER_LABELS[candidate]} {model}: {error}")
+                    response_text = None
                     if isinstance(error, json.JSONDecodeError):
                         continue
                     if "timed out" in str(error).lower() or "no answer within" in str(error):
@@ -496,6 +520,7 @@ class SummaryProcessor:
                 "language": transcript_language or None,
                 "provider": provider,
                 "model": used_model,
+                "passes": passes,
                 "notice": (
                     f"The first model was unavailable, out of quota or busy; {provider.replace(' fallback', '')} "
                     f"{used_model} generated these chapters."
@@ -507,6 +532,104 @@ class SummaryProcessor:
                 "success": False,
                 "error": str(e)
             })
+
+    async def enhance_chapters(self, chapters, provider, model, settings=None, language_instruction=""):
+        """Repartition an existing outline by topic, retaining every source takeaway."""
+        settings = settings or self._chapter_settings()
+        units = []
+        for chapter in chapters:
+            for index, original in enumerate(chapter.get("sections") or [chapter]):
+                section = {**original}
+                units.append({
+                    "chapter": chapter, "section": section,
+                    "first": index == 0,
+                    "title": section["title"], "point": section.get("point") or section.get("summary", ""),
+                })
+        batches, batch, size = [], [], 0
+        for unit in units:
+            length = len(unit["title"]) + len(unit["point"]) + len(unit["chapter"]["title"]) + 100
+            if batch and size + length > 10000:
+                batches.append(batch)
+                batch, size = [], 0
+            batch.append(unit)
+            size += length
+        if batch:
+            batches.append(batch)
+        result = []
+        for batch in batches:
+            prompt = (
+                "Enhance this lecture outline by genuine topic changes, not by sentence, step, duration or count. "
+                "Regroup consecutive entries into coherent chapters and subsections. Keep one workflow, its "
+                "examples and clarifying Q&A together. Split a vague umbrella chapter if its entries teach "
+                "different subjects. Preserve genuinely different brief topics. There is no fixed section cap. "
+                + settings["section_guidance"] + ". " + language_instruction
+                + " Return JSON: {\"chapters\":[{\"title\":\"Topic\",\"summary\":\"Concise summary\","
+                  "\"groups\":[{\"title\":\"Subtopic\",\"indices\":[0,1]}]}]}. "
+                "Every input index must occur exactly once in chronological order across all chapters/groups. "
+                "Groups must contain contiguous indices; never omit, duplicate or reorder an entry. "
+                "Do not invent facts. Keep supporting sentences in the same subtopic. "
+                + (f"The preceding output chapter was {result[-1]['title']}; reuse its title if continuing the same topic. " if result else "")
+                + (f"User emphasis: {settings['instructions']}. " if settings["instructions"] else "")
+                + "\nInput:\n" + json.dumps([
+                    {"index": index, "chapter": unit["chapter"]["title"], "title": unit["title"], "point": unit["point"]}
+                    for index, unit in enumerate(batch)
+                ], ensure_ascii=False)
+            )
+            for attempt in range(2):
+                try:
+                    text = await asyncio.wait_for(
+                        asyncio.to_thread(self._complete, provider, model, prompt, 0.2, True, 3000, True),
+                        timeout=CHAPTER_TIMEOUT_SECONDS,
+                    )
+                    data = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip()))
+                    grouped = self._apply_outline_groups(batch, data, settings["sections"])
+                    break
+                except (ValueError, KeyError, TypeError) as error:
+                    if attempt:
+                        raise ValueError(f"Chapter enhancement returned an invalid outline: {error}") from error
+                    prompt += "\nThe previous grouping was invalid. Return every index exactly once, in order."
+            if result and grouped and result[-1]["title"].casefold() == grouped[0]["title"].casefold():
+                continuing = grouped.pop(0)
+                result[-1]["summary"] = " ".join(filter(None, [result[-1]["summary"], continuing["summary"]]))
+                if settings["sections"]:
+                    result[-1]["sections"].extend(continuing["sections"])
+            result.extend(grouped)
+        return result
+
+    @staticmethod
+    def _apply_outline_groups(units, data, sectioned=True):
+        output, used = [], []
+        if not isinstance(data, dict) or not isinstance(data.get("chapters"), list) or not data["chapters"]:
+            raise ValueError("No chapter groups.")
+        for plan in data["chapters"]:
+            if (not isinstance(plan, dict) or not isinstance(plan.get("title"), str) or not plan["title"].strip()
+                    or not isinstance(plan.get("summary"), str) or not isinstance(plan.get("groups"), list)
+                    or not plan["groups"]):
+                raise ValueError("Invalid chapter group.")
+            sections = []
+            for group in plan["groups"]:
+                if not isinstance(group, dict):
+                    raise ValueError("Invalid section group.")
+                indices = group.get("indices")
+                if (not isinstance(group.get("title"), str) or not group["title"].strip()
+                        or not isinstance(indices, list) or not indices
+                        or any(type(index) is not int or not 0 <= index < len(units) for index in indices)):
+                    raise ValueError("Invalid section indices or title.")
+                used.extend(indices)
+                section = {**units[indices[0]]["section"], "title": group["title"].strip()}
+                section.pop("sections", None)
+                section["point"] = " ".join(filter(None, (units[index]["point"] for index in indices)))
+                sections.append(section)
+            first = units[plan["groups"][0]["indices"][0]]
+            chapter = {**first["chapter"], "timestamp": first["chapter"]["timestamp"] if first.get("first") else sections[0]["timestamp"],
+                       "title": plan["title"].strip(), "summary": plan["summary"].strip()}
+            if not sectioned:
+                chapter["summary"] = " ".join(section["point"] for section in sections)
+            chapter["sections"] = sections if sectioned else []
+            output.append(chapter)
+        if used != list(range(len(units))):
+            raise ValueError("Enhancement omitted, duplicated or reordered source topics.")
+        return output
 
     async def suggest_title(self, chapters, video_id="", source_title=""):
         """Return {"title", "filename"} summarising the video in the chapters' language, or None."""
@@ -622,21 +745,32 @@ class SummaryProcessor:
                 "summary (one short sentence that states the content itself); "
                 "sections (in time order, the first starting with the chapter). "
                 f"{settings['section_guidance']}. Choose the number from actual topic changes, not a fixed quota. "
+                "Plan the topic boundaries before writing the sections. Each section covers a sustained "
+                "subtopic, not a sentence or a list of facts. A new sentence, speaker, example, question, "
+                "answer, tool click, slide or transcript fragment is NOT by itself a topic change. "
+                "Keep the explanation, examples, steps and follow-up questions about one subtopic together. "
+                "In particular, the stages of ONE demonstration or workflow are ONE subsection, not subtopics. "
+                "For example, opening a report, editing its fields, previewing and saving it are all 'Report editing', "
+                "not four sections. A Q&A clarifying that workflow stays in the same subsection. "
+                "Only split when the teaching goal changes to a different concept or independently useful subject. "
+                "Before every proposed boundary, ask whether the speaker is still answering the same learning "
+                "question. If yes, extend the current section's point instead. "
+                "If the chapter covers only one subtopic, return one section; do not subdivide it to fill a quota. "
                 f"Each section has timestamp (HH:MM:SS from the transcript), title ({title_rule}) and point "
-                "(one concise complete sentence with the key takeaway, grounded only in the transcript). "
+                "(a concise paragraph of key takeaways covering the WHOLE subtopic, grounded only in the transcript; "
+                "multiple related sentences belong in this same point, not separate sections). "
                 "State content directly and concisely: write 'Gradient descent minimizes the loss.' and never "
                 "'The lecture explains that...', 'The speaker points out that...', 'The learner will learn...', "
                 "'You will be introduced to...' or 'This section covers...' (nor such phrases in any other "
                 "language). Do not invent facts."
             )
             example = {"chapters": [{
-                "timestamp": "00:00:00", "title": "Course overview",
-                "summary": "Course goals, schedule and grading rules.",
+                "timestamp": "00:00:00", "title": "Report editing",
+                "summary": "A report is opened, edited, previewed and saved.",
                 "sections": [
-                    {"timestamp": "00:00:00", "title": "Learning goals",
-                     "point": "The course builds practical data analysis skills."},
-                    {"timestamp": "00:03:10", "title": "Grading scheme",
-                     "point": "The final exam counts for 60 percent of the grade."},
+                    {"timestamp": "00:00:00", "title": "Report editing",
+                     "point": "Open the report, choose and rename fields, check the preview and save the result. "
+                              "Corrections and questions about these steps belong to this same workflow."},
                 ],
             }]}
         else:
@@ -653,10 +787,15 @@ class SummaryProcessor:
             )
             if settings["sections"]:
                 example["continued_sections"] = []
+                example["continued_point"] = ""
                 guidance.append(
                     f"The previous part ended inside the chapter \"{previous_title}\". If this part begins by "
-                    "continuing that topic, return those sections in continued_sections instead of starting "
-                    "a new chapter at the very beginning. Keep only major topic changes; do not turn every "
+                    "continuing the current subsection, return its additional takeaways in continued_point "
+                    "(text only, empty if there are none). This extends the existing subsection without a new "
+                    "timestamp or title. Only genuinely NEW subtopics within the current chapter go in "
+                    "continued_sections. A continuation is not a new subsection. Start a new chapter only "
+                    "when its actual subject changes, not merely at the start of this part. Keep only major "
+                    "topic changes; do not turn every "
                     "transcript fragment into a section. Keep distinct topics, but group continued explanations "
                     "of the same topic together."
                 )
@@ -687,8 +826,13 @@ class SummaryProcessor:
         continued = []
         chapters = data
         if isinstance(data, dict):
+            point = data.get("continued_point", "")
+            if not isinstance(point, str):
+                raise json.JSONDecodeError("continued_point must be text", text, 0)
+            if point.strip():
+                continued.append({"continue_previous": True, "point": point.strip()})
             if isinstance(data.get("continued_sections"), list):
-                continued = [item for item in data["continued_sections"] if isinstance(item, dict)]
+                continued.extend(item for item in data["continued_sections"] if isinstance(item, dict))
             chapters = data["chapters"] if isinstance(data.get("chapters"), list) else next(
                 (value for key, value in data.items() if isinstance(value, list) and key != "continued_sections"), []
             )
@@ -739,6 +883,7 @@ class SummaryProcessor:
                         section.get("title") for section in (chapters[-1].get("sections") or [])[-4:]
                         if isinstance(section, dict)
                     ],
+                    "current_section": (chapters[-1].get("sections") or [None])[-1],
                 } if chapters else None,
             )
             text = None
@@ -748,7 +893,7 @@ class SummaryProcessor:
                     # Low reasoning keeps gpt-oss from spending the token budget
                     # on thinking and returning an empty or cut-off JSON answer.
                     text = await asyncio.wait_for(
-                        asyncio.to_thread(self._complete, provider, model, prompt, 0.4, True, max_tokens, True),
+                        asyncio.to_thread(self._complete, provider, model, prompt, 0.2, True, max_tokens, True),
                         timeout=CHAPTER_TIMEOUT_SECONDS,
                     )
                     part_chapters, continued = self._parse_chapter_response(text)
@@ -766,7 +911,7 @@ class SummaryProcessor:
                         if invalid_json == 1 and attempt < 5:
                             prompt += (
                                 "\nThe previous answer was invalid JSON. Return exactly ONE JSON object "
-                                "with chapters and optional continued_sections arrays. No extra objects, "
+                                "with chapters, optional continued_sections array and continued_point text. No extra objects, "
                                 "commentary or markdown; escape quotes inside text."
                             )
                             continue
@@ -795,9 +940,15 @@ class SummaryProcessor:
                     await asyncio.sleep(delay)
             if text is not None:
                 if continued and chapters:
-                    chapters[-1].setdefault("sections", [])
-                    if isinstance(chapters[-1]["sections"], list):
-                        chapters[-1]["sections"].extend(continued)
+                    for section in continued:
+                        if section.get("continue_previous"):
+                            target = (chapters[-1].get("sections") or [chapters[-1]])[-1]
+                            key = "point" if target is not chapters[-1] else "summary"
+                            target[key] = " ".join(filter(None, [target.get(key), section["point"]]))
+                        else:
+                            chapters[-1].setdefault("sections", []).append(section)
+                elif any(section.get("continue_previous") for section in continued):
+                    raise ValueError("AI returned a continuation without a previous chapter")
                 chapters.extend(part_chapters)
         return json.dumps(chapters, ensure_ascii=False)
 
@@ -1345,8 +1496,11 @@ class SummaryProcessor:
         entries.sort(key=lambda entry: entry["start"])
         merged = []
         for entry in entries:
-            if merged and entry["start"] == merged[-1]["start"]:
+            if merged and (entry["start"] == merged[-1]["start"]
+                           or entry["title"].casefold() == merged[-1]["title"].casefold()):
                 merged[-1]["sections"].extend(entry["sections"])
+                if entry.get("summary") and entry.get("summary") != merged[-1].get("summary"):
+                    merged[-1]["summary"] = " ".join(filter(None, [merged[-1].get("summary"), entry["summary"]]))
                 continue
             merged.append(entry)
 
@@ -1360,6 +1514,10 @@ class SummaryProcessor:
                 if section["start"] in seen:
                     continue
                 seen.add(section["start"])
+                if sections and section["title"].casefold() == sections[-1]["title"].casefold():
+                    if section.get("point") and section.get("point") != sections[-1].get("point"):
+                        sections[-1]["point"] = " ".join(filter(None, [sections[-1].get("point"), section["point"]]))
+                    continue
                 sections.append(section)
             if sections and sections[0]["start"] != entry["start"]:
                 sections[0] = {**sections[0], "start": entry["start"]}

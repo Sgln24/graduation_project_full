@@ -22,6 +22,7 @@ class Element {
     replaceChildren() { this.children = []; }
     focus() {}
     close() { this.open = false; }
+    showModal() { this.open = true; }
     querySelector() { return null; }
     inputs() {
         return this.children.flatMap(child => ['input', 'textarea'].includes(child.tag) ? [child] : child.inputs());
@@ -49,12 +50,16 @@ const context = vm.createContext({
         getElementById: id => ids[id],
         createElement: tag => new Element(tag),
         addEventListener: (name, handler) => { events[name] = handler; },
+        querySelectorAll: () => [],
     },
     openOptionsDialog: dialog => { dialog.open = true; },
     loadTranscript: content => { state.currentTranscript = content; },
     updateChapters: content => { state.videoChapters = content; },
     updateScenes: content => { state.videoScenes = content; },
     attachChapterSlides() {}, showNotification() {}, refreshTranscriptVersions: async () => {},
+    contentLanguage: (_, __, language) => language || '',
+    slideTitle: scene => scene.title || '',
+    sceneTopicTitle: () => '',
     fetch: async (url, options) => {
         requests.push({url, options});
         const kind = options ? JSON.parse(options.body).kind : new URLSearchParams(url.split('?')[1]).get('kind');

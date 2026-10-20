@@ -28,6 +28,7 @@ const state = {
 const elements = {videoPlayer: {currentTime: 23}};
 const context = vm.createContext({
     state, elements, console,
+    contentLanguage: (_, __, language) => language || '',
     document: {
         getElementById: () => caption,
         querySelectorAll: (selector) => selector === '.scene-item .scene-label' ? [sceneLabel] : items,
@@ -39,13 +40,13 @@ context.updateChapterCaptions();
 assert.equal(caption.textContent, '<Learning>');
 assert.equal(items[0].caption.textContent, 'Introduction');
 assert.equal(items[1].caption.textContent, '<Learning>', 'Timeline titles omit the number already shown in the badge');
-assert.equal(sceneLabel.textContent, 'Scene 2 - <Learning>', 'Scene list reuses the timeline name safely');
+assert.equal(sceneLabel.textContent, '2 - <Learning>', 'Slide list reuses the timeline name safely without a Scene prefix');
 state.videoChapters[1].sections = [
     {timestamp: '00:20', title: 'Specific section'},
     {timestamp: '00:30', title: 'Later section'},
 ];
 context.updateChapterCaptions();
-assert.equal(sceneLabel.textContent, 'Scene 2 - Specific section');
+assert.equal(sceneLabel.textContent, '2 - Specific section');
 assert.equal(items[1].caption.textContent, 'Specific section');
 assert.equal(context.sceneTopicTitle(state.videoChapters, 31), 'Later section');
 assert.equal(context.sceneTopicTitle(state.videoChapters, 5), 'Introduction');
@@ -75,5 +76,5 @@ state.videoScenes = [];
 context.updateChapterCaptions();
 assert(caption.textContent.includes('No chapter'));
 assert(items[0].caption.textContent.includes('No chapter'));
-assert.equal(sceneLabel.textContent, 'Scene 2', 'No invented scene name when no titles exist');
+assert.equal(sceneLabel.textContent, '2', 'No invented slide name when no titles exist');
 console.log('PASS: screenshot/video titles, grouping boundaries, safe text and reset');

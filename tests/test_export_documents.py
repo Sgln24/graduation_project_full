@@ -33,6 +33,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Image as PdfImage, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer
 from export_jobs import ExportJobStore, export_workspace
 from ffmpeg_tools import media_executable
+from content_languages import localized_scenes
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -422,14 +423,31 @@ class ExportDocumentTests(unittest.TestCase):
                              " ".join(item["text"] for item in self.transcript))
         print("HTML: timestamped chapter/subpart headings, complete sentences, valid slide links; ZIP =", names)
 
-    def test_default_export_uses_content_chapters_without_slide_sections(self):
+    def test_default_export_uses_content_chapters_with_topics_and_slide_sections(self):
         response = self.run_export(include_webpage=True)
         with zipfile.ZipFile(response.path) as archive:
             webpage = archive.read("index.html").decode()
             names = archive.namelist()
         self.assertIn("Part 2: Training and evaluation", webpage)
-        self.assertNotIn("Slide 2:", webpage)
-        self.assertFalse(any(name.startswith("slide_") for name in names), names)
+        self.assertIn("Slide 2:", webpage)
+        self.assertTrue(any(name.startswith("slide_") for name in names), names)
+
+    def test_default_export_reuses_saved_topics_and_independent_title_languages(self):
+        self.write_sectioned_summary("lecture_summary_de.json")
+        chapters = json.loads(self.functions["SUMMARIES_DIR"].joinpath("lecture_summary_de.json").read_text())
+        chapters[0]["title"] = "Gespeicherter Bericht"
+        self.write_sectioned_summary("lecture_summary_de.json", chapters)
+        scenes = json.loads(self.functions["SCENES_DIR"].joinpath("lecture.json").read_text())
+        scenes[1]["title_translations"] = {"pl": "Polski slajd"}
+        self.functions["SCENES_DIR"].joinpath("lecture.json").write_text(json.dumps(scenes), encoding="utf-8")
+        self.functions["export_key_points"] = mock.AsyncMock(side_effect=AssertionError("Saved sections must not be regenerated"))
+        response = self.run_export(include_webpage=True, chapter_language="de", slide_title_language="pl")
+        with zipfile.ZipFile(response.path) as archive:
+            webpage = archive.read("index.html").decode()
+        self.assertIn("Gespeicherter Bericht", webpage)
+        self.assertIn("Weight updates", webpage)
+        self.assertIn("Polski slajd", webpage)
+        self.functions["export_key_points"].assert_not_awaited()
 
     def test_opening_speech_is_preserved_in_first_real_section(self):
         sentences = [
@@ -774,7 +792,7 @@ class ExportDocumentTests(unittest.TestCase):
 
     def test_section_clips_are_encoded_and_shown_under_each_section(self):
         self.write_sectioned_summary()
-        response = self.run_export(include_webpage=True, include_section_clips=True)
+        response = self.run_export(include_webpage=True, include_section_clips=True, subpart_mode="points")
         section_commands = [command for command in self.media_commands if re.search(r"_\d\d\.mp4$", command[-1])]
         self.assertEqual([Path(command[-1]).name for command in section_commands],
                          ["01_Neural_networks_01.mp4", "01_Neural_networks_02.mp4"])

@@ -1,22 +1,26 @@
 import { state } from './main.js';
 import { elements } from './elements.js';
-import { openOptionsDialog } from './utils.js';
 import { loadTranscript } from './transcript.js';
 import { updateChapters, attachChapterSlides } from './chapters.js';
 import { updateScenes } from './scenes.js';
 import { showNotification } from './ui.js';
 import { refreshTranscriptVersions } from './transcript-versions.js';
+import { contentLanguage } from './content-languages.js';
+import { slideTitle, sceneTopicTitle } from './chapter-navigation.js';
 
 const clone = value => JSON.parse(JSON.stringify(value));
 const labels = {chapters: 'Edit chapters', slides: 'Edit slide titles', transcript: 'Edit transcript'};
 
-function context() {
+function context(kind) {
     return {
-        videoId: state.currentVideoId, language: state.currentTranslationLanguage || '',
+        videoId: state.currentVideoId,
+        language: kind === 'transcript' ? state.currentTranslationLanguage || ''
+            : contentLanguage(state.currentVideoId, kind, state.currentTranslationLanguage),
+        transcript_language: state.currentTranslationLanguage || '',
         source: state.currentTranscriptSource === 'uploaded' ? 'uploaded'
             : state.currentTranscriptSource === 'youtube' ? 'youtube' : 'whisper',
-        version_id: document.getElementById('transcriptVersionSelect')?.value
-            || state.currentTranscriptVersionId || '',
+        version_id: state.currentTranscriptVersionId
+            || document.getElementById('transcriptVersionSelect')?.value || '',
     };
 }
 
@@ -25,15 +29,10 @@ function currentContent(kind) {
         : kind === 'slides' ? state.videoScenes || [] : state.currentTranscript || [];
 }
 
-function comparableContent(kind, content) {
-    return kind === 'slides' ? content.map(scene => ({
-        timestamp: scene.timestamp, time_seconds: scene.time_seconds, title: scene.title || '',
-    })) : content;
-}
-
 function sameContext(snapshot) {
-    const current = context();
+    const current = context(snapshot.kind);
     return current.videoId === snapshot.videoId && current.language === snapshot.language
+        && current.transcript_language === snapshot.transcript_language
         && current.source === snapshot.source && current.version_id === snapshot.version_id;
 }
 
@@ -97,7 +96,7 @@ export function initContentEditor() {
     for (const kind of Object.keys(labels)) {
         document.getElementById(`edit-${kind}-btn`).addEventListener('click', async () => {
             const generation = ++opening;
-            const snapshot = context();
+            const snapshot = {...context(kind), kind};
             editing = null;
             dirty = false;
             reading = null;
@@ -109,9 +108,12 @@ export function initContentEditor() {
             document.getElementById('contentEditorHelp').textContent = kind === 'transcript'
                 ? 'Correct text without changing timing or speakers. Save creates an edited version; the original remains available.'
                 : kind === 'slides'
-                    ? 'Titles apply to this video in all languages. Leave a title blank to use the automatic title. Slide timing and images stay unchanged.'
-                    : 'Edit titles, summaries and section text. Use MM:SS or HH:MM:SS. Chapters must stay ordered; sections must remain inside their chapter.';
-            openOptionsDialog(dialog);
+                    ? 'Edit titles for the displayed title language. Leave a title blank to use the topic-derived title. Slide timing and images stay unchanged.'
+                    : 'Change the title fields below, then choose Save edits. You can also change summaries, section text and MM:SS or HH:MM:SS timestamps. Chapters must stay ordered.';
+            document.querySelectorAll('dialog.options-dialog[open]').forEach(open => {
+                if (open !== dialog) open.close();
+            });
+            if (!dialog.open) dialog.showModal();
             try {
                 const query = new URLSearchParams({...snapshot, kind});
                 const response = await fetch(`/editable_content/${encodeURIComponent(snapshot.videoId)}?${query}`);
@@ -119,8 +121,7 @@ export function initContentEditor() {
                 if (!response.ok) throw new Error(data.detail || `Could not load content (${response.status})`);
                 if (generation !== opening || !dialog.open) return;
                 if (!sameContext(snapshot)) throw new Error('The selected video or transcript changed. Reopen the editor.');
-                if (kind !== 'chapters' && JSON.stringify(comparableContent(kind, data.content))
-                        !== JSON.stringify(comparableContent(kind, currentContent(kind)))) {
+                if (kind === 'transcript' && JSON.stringify(data.content) !== JSON.stringify(currentContent(kind))) {
                     throw new Error('Displayed content differs from the saved version. Reload this video/version before editing.');
                 }
                 const original = clone(currentContent(kind));
@@ -132,7 +133,8 @@ export function initContentEditor() {
                     row.appendChild(legend);
                     rows.appendChild(row);
                     if (kind === 'slides') {
-                        const title = field(row, 'Slide title', item.title, {blank: true});
+                        const title = field(row, 'Slide title', slideTitle(item, snapshot.language)
+                            || sceneTopicTitle(state.videoChapters || [], Number(item.time_seconds)), {blank: true});
                         return () => title.value;
                     }
                     if (kind === 'transcript') {

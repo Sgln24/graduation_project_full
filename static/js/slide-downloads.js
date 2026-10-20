@@ -2,6 +2,7 @@ import { state } from './main.js';
 import { showError } from './ui.js';
 import { saveBlobToUserLocation } from './utils.js';
 import { startElapsedTimer } from './progress-time.js';
+import { contentLanguage } from './content-languages.js';
 
 export function screenshotArchiveFilename() {
     const stem = (state.currentVideoFilename || 'lecture').replace(/\.[^.]+$/, '')
@@ -76,8 +77,8 @@ export async function downloadSlideTextWord() {
     if (!videoId || !button || button.disabled) return;
     const content = button.innerHTML;
     button.textContent = 'Reading all slides and building Word document…';
-    const query = state.currentTranslationLanguage
-        ? `?transcript_language=${encodeURIComponent(state.currentTranslationLanguage)}` : '';
+    const language = contentLanguage(videoId, 'chapters', state.currentTranslationLanguage);
+    const query = language ? `?chapter_language=${encodeURIComponent(language)}` : '';
     await saveSlideExport(`/download_slide_text_docx/${encodeURIComponent(videoId)}${query}`,
         `${videoId}_slide_text.docx`, button);
     button.innerHTML = content;

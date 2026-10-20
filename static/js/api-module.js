@@ -11,6 +11,7 @@ import { checkSceneDetection, updateScenes, stopDetectionPolling } from './scene
 import { fetchOcrResults, resetOcrStatus } from './ocr.js';
 import { refreshTranscriptVersions } from './transcript-versions.js';
 import { startElapsedTimer } from './progress-time.js';
+import { savedSummaryUrl } from './content-languages.js';
 
 // Translate backend transcript_source/active_language fields (set from the
 // persisted "active source" marker) into the state.currentTranscriptSource
@@ -20,16 +21,16 @@ function applyActiveTranscriptSource(data, videoId) {
     if (data.transcript_source === 'translation' && data.active_language) {
         state.currentTranscriptSource = `translation:${data.active_language}`;
         state.currentTranslationLanguage = data.active_language;
-        return `/summary/${encodeURIComponent(videoId)}?language=${encodeURIComponent(data.active_language)}`;
+        return savedSummaryUrl(videoId, data.active_language);
     }
     if (data.transcript_source === 'uploaded') {
         state.currentTranscriptSource = 'uploaded';
         state.currentTranslationLanguage = null;
-        return `/summary/${encodeURIComponent(videoId)}`;
+        return savedSummaryUrl(videoId);
     }
     state.currentTranscriptSource = 'whisper';
     state.currentTranslationLanguage = null;
-    return `/summary/${encodeURIComponent(videoId)}`;
+    return savedSummaryUrl(videoId);
 }
 
 export async function regenerateTranscript(options = {}) {
@@ -488,10 +489,12 @@ export async function translateTranscript() {
         loadTranscript(data.transcript);
         state.currentTranscriptSource = `translation:${target}`;
         state.currentTranslationLanguage = target;
-        if (Array.isArray(data.chapters)) {
-            state.videoChapters = data.chapters;
-            updateChapters(data.chapters);
+        const summaryResponse = await fetch(savedSummaryUrl(state.currentVideoId, target));
+        const summary = await summaryResponse.json();
+        if (!summaryResponse.ok || !summary.success) {
+            throw new Error(summary.error || 'The transcript was translated, but saved chapters could not be loaded.');
         }
+        updateChapters(summary.chapters || []);
         const usage = data.usage;
         let tokenSummary = usage?.reported_requests
             ? `${usage.total_tokens.toLocaleString()} tokens (${usage.input_tokens.toLocaleString()} input, ${usage.output_tokens.toLocaleString()} output)${usage.complete ? '' : '; partial usage'}`
@@ -992,9 +995,7 @@ export async function processVideo() {
             state.currentTranscript = transcriptToUse;
             
             // Check for existing summary
-            const summaryUrl = state.currentTranslationLanguage
-                ? `/summary/${videoId}?language=${encodeURIComponent(state.currentTranslationLanguage)}`
-                : `/summary/${videoId}`;
+            const summaryUrl = savedSummaryUrl(videoId, state.currentTranslationLanguage);
             const summaryResponse = await fetch(summaryUrl);
             const summaryData = await summaryResponse.json();
             
@@ -1124,7 +1125,7 @@ export async function processVideoUpload(file) {
             elements.exportChaptersBtn.disabled = false;
             
             // Check for existing summary
-            const summaryResponse = await fetch(`/summary/${data.video_id}`);
+            const summaryResponse = await fetch(savedSummaryUrl(data.video_id));
             const summaryData = await summaryResponse.json();
             
             if (summaryData.success && summaryData.exists) {

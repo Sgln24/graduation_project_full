@@ -4,12 +4,14 @@ import { elements } from './elements.js';
 import { formatTime } from './utils.js';
 import { state } from './main.js';
 import { updateActiveTranscript } from './transcript.js';
-import { navigationParts, activePart, conciseTitle, chapterStart, sceneTopicTitle } from './chapter-navigation.js';
+import { navigationParts, activePart, conciseTitle, chapterStart, sceneTopicTitle, slideTitle } from './chapter-navigation.js';
+import { contentLanguage } from './content-languages.js';
 import { scrollWithinContainer } from './scroll-utils.js';
 import { updateActiveChapter } from './chapters.js';
 
 export function updateChapterCaptions() {
-    const parts = navigationParts(state.videoChapters || [], state.videoScenes || [], state.chapterGrouping);
+    const language = contentLanguage(state.currentVideoId, 'slides', state.currentTranslationLanguage);
+    const parts = navigationParts(state.videoChapters || [], state.videoScenes || [], state.chapterGrouping, language);
     const caption = document.getElementById('currentChapterTitle');
     if (caption) {
         const text = activePart(parts, elements.videoPlayer.currentTime)?.title
@@ -27,8 +29,8 @@ export function updateChapterCaptions() {
             title.className = 'chapter-caption';
             item.appendChild(title);
         }
-        const customTitle = (state.videoScenes || []).find(scene =>
-            Number(scene.time_seconds) === Number(image.dataset.time))?.title;
+        const customTitle = slideTitle((state.videoScenes || []).find(scene =>
+            Number(scene.time_seconds) === Number(image.dataset.time)) || {}, language);
         const text = customTitle || sceneTopicTitle(state.videoChapters || [], Number(image.dataset.time))
             || activePart(parts, Number(image.dataset.time))?.title || 'No chapter title available.';
         // The numbered badge already identifies the slide, so show only the topic beneath it.
@@ -38,10 +40,10 @@ export function updateChapterCaptions() {
     });
     document.querySelectorAll('.scene-item .scene-label').forEach((label) => {
         const time = Number(label.closest('.scene-item').dataset.time);
-        const customTitle = (state.videoScenes || []).find(scene => Number(scene.time_seconds) === time)?.title;
+        const customTitle = slideTitle((state.videoScenes || []).find(scene => Number(scene.time_seconds) === time) || {}, language);
         const title = customTitle || sceneTopicTitle(state.videoChapters || [], time) || activePart(parts, time)?.title || '';
         const name = title.replace(/^\d+:\s*/, '').replace(/^\d+$/, '');
-        const text = `Scene ${label.dataset.number}` + (name ? ` - ${name}` : '');
+        const text = `${label.dataset.number}` + (name ? ` - ${name}` : '');
         label.title = name;
         if (label.textContent !== text) label.textContent = text;
     });
@@ -75,7 +77,8 @@ export function syncTimelineGrouping() {
     if (slidesControl) slidesControl.hidden = mode !== 'topic' || !chapters.length || !scenes.length;
     const nestSlides = mode === 'topic' && Boolean(document.getElementById('timelineSlidesToggle')?.checked);
     const signature = JSON.stringify([
-        mode, scenes.map(scene => [scene.time_seconds, scene.title]), showSections, nestSlides,
+        mode, scenes.map(scene => [scene.time_seconds,
+            slideTitle(scene, contentLanguage(state.currentVideoId, 'slides', state.currentTranslationLanguage))]), showSections, nestSlides,
         chapters.map((c) => [c.start, c.title, c.sections.map((s) => [s.start, s.title])]),
     ]);
     if (timeline.dataset.groupingSignature === signature) return;

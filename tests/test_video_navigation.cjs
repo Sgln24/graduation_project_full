@@ -8,6 +8,7 @@ const end = source.indexOf('/**', start);
 assert(start >= 0 && end > start);
 assert(start < source.indexOf('function setupKeyboardControls()'));
 const elements = {videoPlayer: {currentTime: 0}};
+const contentLanguage = (_, __, language) => language || '';
 const state = {videoChapters: [
     {timestamp: '00:00'}, {timestamp: '02:00'}, {timestamp: '01:02:03'},
 ], videoScenes: []};

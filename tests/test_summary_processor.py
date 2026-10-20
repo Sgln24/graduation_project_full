@@ -691,6 +691,55 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
 
 
 class SummaryProviderFallbackTests(unittest.TestCase):
+    def test_enhancement_keeps_every_takeaway_and_manual_section_time(self):
+        chapters = [{
+            "timestamp": "00:00", "title": "Workflow", "summary": "Overview",
+            "sections": [
+                {"timestamp": "00:05.250", "title": "Step 1", "point": "First detail.", "timestamp_edited": True},
+                {"timestamp": "00:15", "title": "Step 2", "point": "Second detail."},
+            ],
+        }]
+        processor = self._processor(None, None, None)
+        processor._complete = mock.Mock(return_value=json.dumps({"chapters": [{
+            "title": "Complete workflow", "summary": "Overview",
+            "groups": [{"title": "Workflow", "indices": [0, 1]}],
+        }]}))
+        result = asyncio.run(processor.enhance_chapters(chapters, "groq", "test"))
+        self.assertEqual(result[0]["timestamp"], "00:00")
+        self.assertEqual(result[0]["sections"][0]["timestamp"], "00:05.250")
+        self.assertTrue(result[0]["sections"][0]["timestamp_edited"])
+        self.assertEqual(result[0]["sections"][0]["point"], "First detail. Second detail.")
+        self.assertEqual(chapters[0]["sections"][1]["title"], "Step 2")
+
+    def test_enhancement_rejects_omitted_duplicate_reordered_and_boolean_indices(self):
+        units = [{"section": {"timestamp": "00:00"}, "chapter": {"timestamp": "00:00"},
+                  "point": text} for text in ["One", "Two"]]
+        for indices in ([0], [0, 0], [1, 0], [False, 1]):
+            with self.subTest(indices=indices), self.assertRaises(ValueError):
+                SummaryProcessor._apply_outline_groups(units, {"chapters": [{
+                    "title": "Topic", "summary": "", "groups": [{"title": "Section", "indices": indices}],
+                }]})
+
+    def test_two_pass_generation_reviews_outline_and_failure_does_not_save_draft(self):
+        processor = self._processor(None, None, None)
+        processor._chunked_chapters = mock.AsyncMock(return_value='[{"timestamp":"00:00","title":"Draft"}]')
+        processor.enhance_chapters = mock.AsyncMock(return_value=[{"timestamp": "00:00", "title": "Reviewed"}])
+        processor._save_chapters = mock.Mock()
+        transcript = [{"start": 0, "duration": 10, "text": "A topic."}]
+        result = asyncio.run(processor.generate_summary(transcript, "video", passes="two"))
+        self.assertTrue(result.content["success"])
+        self.assertEqual(result.content["chapters"][0]["title"], "Reviewed")
+        processor.enhance_chapters.assert_awaited_once()
+        processor._save_chapters.reset_mock()
+        processor.enhance_chapters.side_effect = RuntimeError("Invalid review")
+        result = asyncio.run(processor.generate_summary(transcript, "video", passes="two"))
+        self.assertFalse(result.content["success"])
+        processor._save_chapters.assert_not_called()
+
+    def test_generation_language_detects_clear_english_despite_foreign_proper_names(self):
+        text = "We use the German product. This is the report and you can edit the data with this tool."
+        self.assertEqual(SummaryProcessor._detect_transcript_language([{"text": text}]), "en")
+
     def test_summary_language_defaults_to_transcript_and_supports_selection(self):
         self.assertIn("same language", SummaryProcessor._summary_language_instruction("transcript"))
         self.assertIn("German", SummaryProcessor._summary_language_instruction("de"))
@@ -945,6 +994,61 @@ class SummaryProviderFallbackTests(unittest.TestCase):
         self.assertEqual([section["point"] for section in result],
                          [section["point"] for section in sections])
         self.assertIn("group continued explanations", prompts[1])
+
+    def test_same_subtopic_across_requests_extends_existing_section_in_one_pass(self):
+        processor = self._processor(None, None, None)
+        answers = iter([
+            {"chapters": [{"timestamp": "00:00:00", "title": "Workflow", "sections": [
+                {"timestamp": "00:00:00", "title": "Report editing", "point": "Choose the report."},
+            ]}]},
+            {"continued_point": "Adjust its fields and check the result.", "continued_sections": [],
+             "chapters": []},
+        ])
+        prompts = []
+        processor._complete = lambda provider, model, prompt, *args: prompts.append(prompt) or json.dumps(next(answers))
+        transcript = [{"start": index * 10, "duration": 10, "text": "word " * 20} for index in range(24)]
+        with mock.patch("processors.summary_processor.GROQ_CHAPTER_CHUNK_CHARS", 3500):
+            response = asyncio.run(processor.generate_summary(transcript, None))
+        self.assertTrue(response.content["success"], response.content)
+        sections = response.content["chapters"][0]["sections"]
+        self.assertEqual(len(sections), 1, "A request boundary must not create a new subsection")
+        self.assertEqual(sections[0]["timestamp"], "00:00")
+        self.assertEqual(sections[0]["point"], "Choose the report. Adjust its fields and check the result.")
+        self.assertEqual(len(prompts), 2, "No extra AI review pass")
+        self.assertIn('"current_section"', prompts[1])
+        self.assertIn("Choose the report.", prompts[1])
+        self.assertIn("continued_point", prompts[1])
+        self.assertIn("multiple related sentences belong in this same point", prompts[0])
+        self.assertIn("slide or transcript fragment is NOT by itself a topic change", prompts[0])
+
+    def test_continuation_and_genuine_new_subtopic_are_kept_separate(self):
+        chapters, continued = SummaryProcessor._parse_chapter_response(json.dumps({
+            "continued_point": "Continue the same explanation.",
+            "continued_sections": [{"timestamp": "01:10", "title": "Billing", "point": "Review charges."}],
+            "chapters": [],
+        }))
+        self.assertEqual(chapters, [])
+        self.assertTrue(continued[0]["continue_previous"])
+        self.assertEqual(continued[1]["title"], "Billing")
+        with self.assertRaises(json.JSONDecodeError):
+            SummaryProcessor._parse_chapter_response('{"continued_point": [], "chapters": []}')
+
+    def test_duplicate_adjacent_topics_merge_without_time_based_caps(self):
+        chapters = SummaryProcessor._normalize_chapters([
+            {"timestamp": "00:00", "title": "Report editing", "sections": [
+                {"timestamp": "00:00", "title": "Fields", "point": "Choose fields."},
+                {"timestamp": "00:10", "title": "Fields", "point": "Rename fields."},
+            ]},
+            {"timestamp": "00:20", "title": "Report editing", "sections": [
+                {"timestamp": "00:20", "title": "Fields", "point": "Check fields."},
+                {"timestamp": "00:30", "title": "Permissions", "point": "Choose access."},
+            ]},
+            {"timestamp": "00:40", "title": "Billing", "sections": []},
+        ], [], end=50)
+        self.assertEqual([chapter["title"] for chapter in chapters], ["Report editing", "Billing"])
+        self.assertEqual([section["title"] for section in chapters[0]["sections"]], ["Fields", "Permissions"])
+        self.assertEqual(chapters[0]["sections"][0]["point"], "Choose fields. Rename fields. Check fields.")
+        self.assertEqual(chapters[1]["timestamp"], "00:40", "A genuine brief topic must remain")
 
     def test_flat_structure_and_detail_level_change_the_prompt(self):
         processor = self._processor(None, None, None)

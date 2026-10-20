@@ -16,6 +16,9 @@ import { initCaptionExport } from './caption-export.js';
 import { initVttBatch } from './vtt-batch.js';
 import { openOptionsDialog } from './utils.js';
 import { initContentEditor } from './content-editor.js';
+import { initChapterProjects } from './chapter-projects.js';
+import { initChapterTools } from './chapter-tools.js';
+import { contentLanguage } from './content-languages.js';
 
 // Global state
 export const state = {
@@ -168,7 +171,8 @@ let lastKey = null;
 function navigateChapter(direction) {
     const player = elements.videoPlayer;
     if (!player) return;
-    const times = navigationParts(state.videoChapters || [], state.videoScenes || [], state.chapterGrouping)
+    const times = navigationParts(state.videoChapters || [], state.videoScenes || [], state.chapterGrouping,
+        contentLanguage(state.currentVideoId, 'slides', state.currentTranslationLanguage))
         .map((part) => part.start);
     if (!times.length) {
         showNotification('Generate chapters or detect slides for the selected navigation mode.', 'info');
@@ -477,6 +481,8 @@ function initApp() {
     initCaptionExport();
     initVttBatch(updateTranslationModelStatus);
     initContentEditor();
+    initChapterTools();
+    initChapterProjects();
     document.addEventListener('chaptersUpdated', () => void refreshSavedExports());
     bind(document.getElementById('refreshSavedExportsBtn'), 'click', refreshSavedExports);
     bind(elements.regenerateTranscriptBtn, 'click', () => regenerateTranscript());

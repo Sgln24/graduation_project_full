@@ -131,6 +131,18 @@ class SlideExportTests(unittest.TestCase):
         self.assertIn("00:00:50", sections[-1])
         self.assertIn("Last", sections[-1])
 
+    def test_screenshot_html_uses_selected_title_translation_without_changing_saved_scenes(self):
+        self.scenes[0]["title"] = "Original title"
+        self.scenes[0]["title_translations"] = {"pl": "Polski tytul"}
+        self.save_scenes()
+        output = build_slide_transcript_html(
+            "lecture", [{"start": 0, "text": "Transcript"}], self.scenes_dir, self.images_dir, "Lecture",
+            slide_title_language="pl",
+        )
+        self.assertIn("Polski tytul", output)
+        self.assertNotIn("Original title", output)
+        self.assertEqual(self.scenes[0]["title"], "Original title")
+
     def test_screenshot_html_rejects_invalid_transcript_and_missing_or_corrupt_images(self):
         for transcript in ([], None, [{"text": "Missing timestamp"}],
                            [{"start": float("nan"), "text": "Invalid"}],

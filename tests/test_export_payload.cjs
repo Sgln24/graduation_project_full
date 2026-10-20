@@ -49,6 +49,7 @@ elements.exportOptionsDialog = {
 let jobFails = false;
 const context = vm.createContext({
     elements, state, console,
+    contentLanguage: (_, __, language) => language || '',
     selectedMediaExportId: () => 'caption-copy',
     startElapsedTimer: () => () => {},
     document: {getElementById: () => null},
@@ -85,7 +86,7 @@ assert.equal(elements.exportWebpage.disabled, false);
     await context.exportChapters();
     assert.equal(dialogClosures, 1);
     assert.equal(payload.chapter_grouping, 'topic');
-    assert.equal(payload.subpart_mode, 'points');
+    assert.equal(payload.subpart_mode, 'both');
     assert.equal(payload.timestamp_mode, 'subpart');
     assert.equal(payload.include_webpage, true);
     assert.equal(payload.media_export_id, 'caption-copy', 'Chapter clips must use the chosen video copy');

@@ -4,11 +4,13 @@ import { elements } from './elements.js';
 import { state } from './main.js';
 import { showError, showErrorWithActions, showNotification } from './ui.js';
 import { saveBlobToUserLocation } from './utils.js';
-import { conciseTitle } from './chapter-navigation.js';
+import { conciseTitle, slideTitle, sceneTopicTitle } from './chapter-navigation.js';
 import { scrollWithinContainer } from './scroll-utils.js';
 import { createSlideDownloadButton } from './slide-downloads.js';
 import { startElapsedTimer } from './progress-time.js';
 import { selectedMediaExportId } from './caption-export.js';
+import { createChapterProjectButton } from './chapter-projects.js';
+import { contentLanguage, setContentLanguage } from './content-languages.js';
 
 let chapterMarkerGeneration = 0;
 
@@ -263,7 +265,7 @@ export async function exportChapters() {
             include_scorm: !elements.exportScorm?.disabled && (elements.exportScorm?.checked ?? false),
             chapter_grouping: elements.chapterGrouping?.value || 'topic',
             timestamp_mode: elements.timestampMode?.value || 'subpart',
-            subpart_mode: elements.subpartMode?.value || 'points',
+            subpart_mode: elements.subpartMode?.value || 'both',
             clip_overlap: document.getElementById('exportClipOverlap')?.checked ?? true,
             include_section_clips: !document.getElementById('exportSectionClips')?.disabled
                 && (document.getElementById('exportSectionClips')?.checked ?? false),
@@ -271,6 +273,8 @@ export async function exportChapters() {
             document_title: elements.exportTitle?.value.trim() || '',
             export_filename: elements.exportFilename?.value.trim() || '',
             transcript_language: state.currentTranslationLanguage || '',
+            chapter_language: contentLanguage(videoId, 'chapters', state.currentTranslationLanguage),
+            slide_title_language: contentLanguage(videoId, 'slides', state.currentTranslationLanguage),
             transcript_source: state.currentTranscriptSource || '',
             media_export_id: selectedMediaExportId(videoId),
         };
@@ -361,13 +365,17 @@ export async function generateChapters() {
         return;
     }
     state.summaryGenerationInProgress = true;
+    document.dispatchEvent(new CustomEvent('summaryGenerationChanged'));
     const generateSummaryBtn = elements.generateSummaryBtn;
     let stopElapsed;
     
     try {
         generateSummaryBtn.disabled = true;
         generateSummaryBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
-        const status = setSummaryStatus('generating', '<i class="fas fa-spinner fa-spin"></i> Generating summary and chapters...');
+        const passes = document.getElementById('chapterPasses')?.value || 'one';
+        const status = setSummaryStatus('generating', '<i class="fas fa-spinner fa-spin"></i> '
+            + (passes === 'two' ? 'Generating chapters, then reviewing topic boundaries (two passes)...'
+                : 'Generating summary and chapters...'));
         stopElapsed = startElapsedTimer(status);
         showError('');
         const requestVideoId = state.currentVideoId;
@@ -385,6 +393,7 @@ export async function generateChapters() {
                 structure: elements.chapterStructure?.value || 'sections',
                 detail: elements.chapterDetail?.value || 'balanced',
                 instructions: (elements.chapterInstructions?.value || '').trim(),
+                passes,
             })
         });
 
@@ -400,6 +409,7 @@ export async function generateChapters() {
         }
 
         // Store the chapters in state
+        setContentLanguage(requestVideoId, 'chapters', null);
         state.videoChapters = data.chapters;
         if (state.summaryRetryTimer) {
             clearInterval(state.summaryRetryTimer);
@@ -468,6 +478,7 @@ export async function generateChapters() {
     } finally {
         stopElapsed?.();
         state.summaryGenerationInProgress = false;
+        document.dispatchEvent(new CustomEvent('summaryGenerationChanged'));
         generateSummaryBtn.disabled = false;
         generateSummaryBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Summary';
     }
@@ -529,7 +540,7 @@ export function updateChapters(chapters) {
     }
 
     // Update the list of chapters in the sidebar
-    chapters.forEach(chapter => {
+    chapters.forEach((chapter, index) => {
         const div = document.createElement('div');
         div.className = 'chapter-item';
         div.dataset.start = timestampSeconds(chapter.timestamp);
@@ -541,6 +552,7 @@ export function updateChapters(chapters) {
         title.title = chapter.title;
         div.appendChild(timestamp);
         div.appendChild(title);
+        div.appendChild(createChapterProjectButton(chapter, index, chapters));
         if (chapter.summary) div.title = chapter.summary;
         div.onclick = () => {
             const time = timestampSeconds(chapter.timestamp);
@@ -673,7 +685,8 @@ function slideRow(scene, index, time) {
     timestamp.className = 'chapter-timestamp';
     timestamp.textContent = scene.timestamp || formatClock(time);
     const title = document.createElement('span');
-    title.textContent = scene.title || `Slide ${index + 1}`;
+    title.textContent = slideTitle(scene, contentLanguage(state.currentVideoId, 'slides', state.currentTranslationLanguage))
+        || sceneTopicTitle(state.videoChapters || [], Number(scene.time_seconds)) || `Slide ${index + 1}`;
     item.append(timestamp, title);
     item.appendChild(createSlideDownloadButton([index], `Download slide ${index + 1}`));
     const seek = (event) => {
