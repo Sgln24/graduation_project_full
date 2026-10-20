@@ -691,6 +691,47 @@ class SummaryProcessorTranslationTests(unittest.TestCase):
 
 
 class SummaryProviderFallbackTests(unittest.TestCase):
+    def test_whole_video_summary_uses_the_entire_transcript_and_one_paragraph(self):
+        processor = self._processor(None, None, None)
+        processor._complete = mock.Mock(return_value="The lecture explains the workflow.\n\nIt finishes with billing.")
+        result = asyncio.run(processor.generate_video_summary([
+            {"text": "OPENING SUBJECT"}, {"text": "ENDING SUBJECT"},
+        ], transcript_language="en"))
+        prompt = processor._complete.call_args.args[2]
+        self.assertIn("OPENING SUBJECT", prompt)
+        self.assertIn("ENDING SUBJECT", prompt)
+        self.assertIn("English", prompt)
+        self.assertEqual(result["summary"], "The lecture explains the workflow. It finishes with billing.")
+        self.assertNotIn("\n", result["summary"])
+        processor._complete.assert_called_once()
+
+    def test_long_video_summary_reduces_all_parts_before_final_synthesis(self):
+        processor = self._processor(None, None, None)
+        prompts = []
+        def complete(provider, model, prompt, *args):
+            prompts.append(prompt)
+            return f"Takeaway from part {len(prompts)}."
+        processor._complete = complete
+        result = asyncio.run(processor.generate_video_summary([
+            {"text": "START " + "lecture " * 4000 + " ENDING"},
+        ], transcript_language="en"))
+        self.assertGreater(len(prompts), 2)
+        self.assertIn("START", prompts[0])
+        self.assertIn("ENDING", prompts[-2])
+        self.assertIn("Takeaway from part 1.", prompts[-1])
+        self.assertIn(f"Takeaway from part {len(prompts) - 1}.", prompts[-1])
+        self.assertEqual(result["summary"], f"Takeaway from part {len(prompts)}.")
+
+    def test_whole_video_summary_falls_back_and_rejects_empty_or_list_output(self):
+        processor = self._processor(None, None, None)
+        processor._complete = mock.Mock(side_effect=["", "- Bullet list", "A valid short whole-video paragraph."])
+        result = asyncio.run(processor.generate_video_summary([{"text": "Lecture"}]))
+        self.assertEqual(result["summary"], "A valid short whole-video paragraph.")
+        self.assertEqual(processor._complete.call_count, 3)
+        processor._complete = mock.Mock(return_value="")
+        with self.assertRaisesRegex(RuntimeError, "empty video summary"):
+            asyncio.run(processor.generate_video_summary([{"text": "Lecture"}]))
+
     def test_enhancement_keeps_every_takeaway_and_manual_section_time(self):
         chapters = [{
             "timestamp": "00:00", "title": "Workflow", "summary": "Overview",

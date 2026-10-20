@@ -675,7 +675,7 @@ async function startYoutubeWhisperPolling(videoId) {
         loadTranscript(transcript);
         elements.generateSummaryBtn.disabled = false;
         elements.exportChaptersBtn.disabled = false;
-        showNotification('Whisper transcript generation complete. Generate Summary is ready.', 'success');
+        showNotification('Whisper transcript generation complete. Generate chapters and Generate summary are ready.', 'success');
     };
 
     const pollStartedAt = Date.now();
@@ -800,6 +800,7 @@ function resetVideoStates() {
     state.currentVideoId = null;
     state.currentVideoFilename = null;
     state.currentTranslationLanguage = null;
+    document.dispatchEvent(new CustomEvent('videoSelectionChanged'));
     state.whisperTranscriptPollGeneration += 1;
     if (elements.translationTarget) {
         elements.translationTarget.value = '';
@@ -819,7 +820,7 @@ function resetVideoStates() {
 
     // Clear existing transcript and chapters
     elements.transcriptContainer.innerHTML = '';
-    elements.chaptersContainer.innerHTML = '<p>Click "Generate Summary" to create chapter markers from the transcript.</p>';
+    elements.chaptersContainer.innerHTML = '<p>Click "Generate chapters" to create chapter markers from the transcript.</p>';
     
     // Reset chapter state
     state.videoChapters = [];
@@ -1003,7 +1004,7 @@ export async function processVideo() {
                 // Load existing summary
                 updateChapters(summaryData.chapters);
             } else {
-                elements.chaptersContainer.innerHTML = '<p>Click "Generate Summary" to create chapter markers from the transcript.</p>';
+                elements.chaptersContainer.innerHTML = '<p>Click "Generate chapters" to create chapter markers from the transcript.</p>';
             }
 
             // Update transcript display
@@ -1132,7 +1133,7 @@ export async function processVideoUpload(file) {
                 // Load existing summary
                 updateChapters(summaryData.chapters);
             } else {
-                elements.chaptersContainer.innerHTML = '<p>Click "Generate Summary" to create chapter markers from the transcript.</p>';
+                elements.chaptersContainer.innerHTML = '<p>Click "Generate chapters" to create chapter markers from the transcript.</p>';
             }
         }
         // If transcript is being generated, show progress

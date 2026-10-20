@@ -554,6 +554,23 @@ Older mismatched outlines need an explicit translation or regeneration.
 topic sections and slide-change sections included by default. Saved sections
 are reused even when slide changes are included, avoiding unnecessary AI calls.
 
+**Whole-video summary:** In the Chapters tab, **Generate summary** creates one
+short paragraph covering the entire open transcript, in its language. Long
+transcripts are summarized in bounded parts and then synthesized, not truncated.
+The paragraph is saved separately from the chapter outline and restored when
+the same transcript is reopened, including after a server restart. Edited text
+and translations have separate summaries; changing speaker names does not
+invalidate a paragraph. The outline action is now called **Generate chapters**.
+Both actions use the model selected under Chapter options.
+
+**Speaker timeline:** Once the open transcript has detected speaker labels,
+colored lanes appear beneath the video. Each lane shows a speaker's speaking
+intervals on the same full-video time scale, including silence and overlaps.
+Saved speaker names are shown. Click any lane to seek, or focus it and use
+Left/Right (five seconds), Home or End. A playback cursor follows the video.
+The timeline updates when switching transcript versions or renaming speakers
+and is hidden for transcripts without speaker labels.
+
 **Chapter projects:** Each chapter row offers **Open as project**. It creates an
 independent MP4 of that chapter, copies overlapping transcript cues with timing
 reset to zero, and copies available slide images, custom titles and saved OCR.

@@ -70,6 +70,116 @@
     --transition: background-color var(--ease), border-color var(--ease), color var(--ease), box-shadow var(--ease), transform var(--ease);
 }
 
+.speaker-timeline {
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-1);
+}
+.speaker-timeline[hidden] { display: none; }
+.speaker-timeline-heading,
+.video-summary-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.speaker-timeline-help,
+.video-summary-status {
+    margin: 4px 0 8px;
+    font-size: 12px;
+    color: var(--text-2);
+}
+.speaker-timeline-rows {
+    max-height: clamp(90px, 22dvh, 210px);
+    overflow-y: auto;
+    padding: 2px 3px;
+}
+.speaker-timeline-row { margin: 0 0 12px; }
+.speaker-timeline-row:last-child { margin-bottom: 2px; }
+.speaker-timeline-label {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 3px;
+    color: var(--text-1);
+    overflow-wrap: anywhere;
+}
+.speaker-timeline-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 27px;
+    height: 27px;
+    border: 1px solid var(--speaker-color);
+    color: var(--speaker-color);
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 600;
+}
+.speaker-timeline-track {
+    position: relative;
+    height: 18px;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+.speaker-timeline-track::before {
+    content: '';
+    position: absolute;
+    inset: 6px 0;
+    background: var(--surface-3);
+    border-radius: 5px;
+}
+.speaker-timeline-track:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+}
+.speaker-timeline-segment {
+    position: absolute;
+    top: 6px;
+    height: 6px;
+    min-width: 2px;
+    max-width: 100%;
+    border-radius: 3px;
+    background: var(--speaker-color);
+}
+.speaker-timeline-track.is-speaking .speaker-timeline-segment { top: 5px; height: 8px; }
+.speaker-timeline-cursor {
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    width: 2px;
+    transform: translateX(-1px);
+    background: var(--text-1);
+    pointer-events: none;
+}
+.video-summary-panel {
+    flex-shrink: 0;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-1);
+}
+.video-summary-heading h3 { margin: 0; font-size: 14px; }
+#videoSummaryText {
+    margin: 8px 0;
+    max-height: clamp(100px, 22dvh, 180px);
+    overflow-y: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+#videoSummaryText:empty { display: none; }
+
+@media (min-width: 900px) {
+    .player-column:has(#speakerTimeline:not([hidden])) #videoPlayer {
+        max-height: min(var(--video-height), max(150px, calc(100dvh - 470px)));
+    }
+}
+
 @media (prefers-color-scheme: dark) {
     :root {
         --surface-0: #0d1017;

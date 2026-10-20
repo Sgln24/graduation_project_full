@@ -60,6 +60,7 @@ from content_edits import router as content_edits_router
 from chapter_projects import router as chapter_projects_router, save_video_metadata
 import content_edits
 from content_languages import localized_scenes, scene_title
+import video_summary
 
 load_dotenv()
 
@@ -1148,6 +1149,25 @@ async def generate_summary(request: Request):
             "success": False,
             "error": str(e)
         })
+
+
+@app.post("/video_summary/{video_id}/load")
+async def load_video_summary(video_id: str, data: dict):
+    path, _, _ = video_summary.summary_context(video_id, data)
+    return video_summary.load_summary(path)
+
+
+@app.post("/video_summary/{video_id}/generate")
+async def generate_video_summary(video_id: str, data: dict):
+    path, transcript, language = video_summary.summary_context(video_id, data)
+    try:
+        result = await summary_processor.generate_video_summary(transcript, data.get("model"), language)
+        video_summary.save_summary(path, result)
+        return {"success": True, **result}
+    except Exception as error:
+        logging.exception("Whole-video summary failed for %s", video_id)
+        raise HTTPException(502, f"Could not generate the video summary: {error}") from error
+
 
 @app.get("/summary/{video_id}")
 async def get_summary(video_id: str, language: str = ""):

@@ -19,6 +19,8 @@ import { initContentEditor } from './content-editor.js';
 import { initChapterProjects } from './chapter-projects.js';
 import { initChapterTools } from './chapter-tools.js';
 import { contentLanguage } from './content-languages.js';
+import { initSpeakerTimeline } from './speaker-timeline.js';
+import { initVideoSummary } from './video-summary.js';
 
 // Global state
 export const state = {
@@ -481,6 +483,8 @@ function initApp() {
     initCaptionExport();
     initVttBatch(updateTranslationModelStatus);
     initContentEditor();
+    initSpeakerTimeline();
+    initVideoSummary();
     initChapterTools();
     initChapterProjects();
     document.addEventListener('chaptersUpdated', () => void refreshSavedExports());

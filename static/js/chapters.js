@@ -357,11 +357,11 @@ export async function exportChapters() {
  */
 export async function generateChapters() {
     if (state.summaryGenerationInProgress) {
-        showNotification('Summary generation is already running.', 'info');
+        showNotification('Chapter generation is already running.', 'info');
         return;
     }
     if (!state.currentTranscript?.length) {
-        showError('Generate or load a transcript before generating a summary.');
+        showError('Generate or load a transcript before generating chapters.');
         return;
     }
     state.summaryGenerationInProgress = true;
@@ -375,7 +375,7 @@ export async function generateChapters() {
         const passes = document.getElementById('chapterPasses')?.value || 'one';
         const status = setSummaryStatus('generating', '<i class="fas fa-spinner fa-spin"></i> '
             + (passes === 'two' ? 'Generating chapters, then reviewing topic boundaries (two passes)...'
-                : 'Generating summary and chapters...'));
+                : 'Generating chapters...'));
         stopElapsed = startElapsedTimer(status);
         showError('');
         const requestVideoId = state.currentVideoId;
@@ -397,7 +397,7 @@ export async function generateChapters() {
             })
         });
 
-        const data = await readJsonResponse(response, 'Summary generation');
+        const data = await readJsonResponse(response, 'Chapter generation');
 
         if (!data.success) {
             throw new Error(data.error);
@@ -421,9 +421,9 @@ export async function generateChapters() {
         if (data.notice) {
             showNotification(data.notice, 'info');
         }
-        setSummaryStatus('complete', '<i class="fas fa-check-circle"></i> Summary and chapters ready.');
+        setSummaryStatus('complete', '<i class="fas fa-check-circle"></i> Chapters ready.');
     } catch (error) {
-        showError(`Error generating summary: ${error.message}`);
+        showError(`Error generating chapters: ${error.message}`);
         const isModelError = /gemini|openai|model|429|404|quota|overload|unavailable|high demand/i.test(error.message);
         const detail = document.createElement('span');
         detail.textContent = error.message;
@@ -434,7 +434,7 @@ export async function generateChapters() {
             ? `<i class="fas fa-exclamation-circle"></i> The AI provider could not generate chapters: ${detail.innerHTML}. Your existing chapters were kept.${openAiHint}`
             : error instanceof TypeError && /fetch|network/i.test(error.message)
             ? '<i class="fas fa-exclamation-circle"></i> Lost connection to the app server. It may have stopped or restarted. Your existing chapters were kept. Restore the server connection before retrying.'
-            : `<i class="fas fa-exclamation-circle"></i> Summary generation failed: ${detail.innerHTML}. Your existing chapters were kept. You can retry without reloading the video.`;
+            : `<i class="fas fa-exclamation-circle"></i> Chapter generation failed: ${detail.innerHTML}. Your existing chapters were kept. You can retry without reloading the video.`;
         const status = setSummaryStatus(
             'error',
             statusMessage
@@ -458,7 +458,7 @@ export async function generateChapters() {
                         void generateChapters();
                     }
                 }, 15000);
-                showNotification('Retrying summary generation now; automatic retries will continue every 15 seconds.', 'info');
+                showNotification('Retrying chapter generation now; automatic retries will continue every 15 seconds.', 'info');
                 void generateChapters();
             });
             status.appendChild(autoRetryButton);
@@ -471,7 +471,7 @@ export async function generateChapters() {
                     clearInterval(state.summaryRetryTimer);
                     state.summaryRetryTimer = null;
                 }
-                showNotification('Automatic summary retry stopped.', 'info');
+                showNotification('Automatic chapter retry stopped.', 'info');
             });
             status.appendChild(stopRetryButton);
         }
@@ -480,7 +480,7 @@ export async function generateChapters() {
         state.summaryGenerationInProgress = false;
         document.dispatchEvent(new CustomEvent('summaryGenerationChanged'));
         generateSummaryBtn.disabled = false;
-        generateSummaryBtn.innerHTML = '<i class="fas fa-magic"></i> Generate Summary';
+        generateSummaryBtn.innerHTML = '<i class="fas fa-magic"></i> Generate chapters';
     }
 }
 
@@ -577,7 +577,7 @@ export function updateChapters(chapters) {
     attachChapterSlides();
     document.dispatchEvent(new CustomEvent('chaptersUpdated', { detail: chapters }));
     elements.exportChaptersBtn.disabled = false;
-    setSummaryStatus('complete', '<i class="fas fa-check-circle"></i> Summary and chapters ready.');
+    setSummaryStatus('complete', '<i class="fas fa-check-circle"></i> Chapters ready.');
     
     // Add chapter markers to the timeline
     addChapterMarkersToTimeline(chapters);

@@ -166,6 +166,11 @@
                     <div id="progressHoverTime" class="progress-hover-time"></div>
                     <!-- Scene markers will be added here -->
                 </div>
+                <section id="speakerTimeline" class="speaker-timeline" aria-label="Speaker timeline" hidden>
+                    <div class="speaker-timeline-heading"><strong>Speakers</strong><span id="speakerTimelineDuration"></span></div>
+                    <p class="speaker-timeline-help">Colored intervals show when each speaker talks. Click a lane to seek.</p>
+                    <div id="speakerTimelineRows" class="speaker-timeline-rows"></div>
+                </section>
                 </div>
                 <div class="layout-splitter" id="timelineSplitter" role="separator" aria-orientation="vertical" aria-label="Resize visual timeline" title="Drag to resize. Double-click to reset." tabindex="0"></div>
                 <div class="timeline-container" data-pane="timeline">
@@ -452,9 +457,17 @@
                     </div>
                     
                     <div class="tab-pane" id="chapters-tab">
+                        <section class="video-summary-panel" aria-labelledby="videoSummaryHeading">
+                            <div class="video-summary-heading">
+                                <h3 id="videoSummaryHeading">Video summary</h3>
+                                <button id="generateVideoSummaryBtn" class="btn btn-accent" type="button" disabled>Generate summary</button>
+                            </div>
+                            <p id="videoSummaryText" dir="auto" tabindex="0" aria-label="Whole-video summary"></p>
+                            <p id="videoSummaryStatus" class="video-summary-status" role="status" aria-live="polite">Load a transcript to generate a short whole-video summary.</p>
+                        </section>
                         <div class="controls-bar chapter-controls">
                             <button id="generateSummaryBtn" class="btn btn-accent" disabled>
-                                <i class="fas fa-magic"></i> Generate Summary
+                                <i class="fas fa-magic"></i> Generate chapters
                             </button>
                             <button id="summaryOptionsBtn" class="btn btn-secondary btn-options" type="button">Chapter options</button>
                             <button id="edit-chapters-btn" class="btn btn-secondary btn-action" type="button" disabled>Edit chapters</button>
@@ -472,7 +485,7 @@
                                 <input type="checkbox" id="chapterSlidesToggle"> Add detected slides
                             </label>
                             <div id="summaryOptionsPanel" class="summary-options" hidden>
-                                <label for="summaryModel">Chapter generation model</label>
+                                <label for="summaryModel">Chapter and summary model</label>
                                 <select id="summaryModel">
                                     <option value="" selected>Automatic: Groq first, then Gemini</option>
                                     <option value="gemini-3.8-flash">Gemini 3.8 Flash</option>
@@ -578,7 +591,7 @@
                         <button id="openChapterProjectBtn" class="btn btn-secondary btn-action" type="button" hidden>Open chapter project</button>
                         <div class="tab-body" id="chaptersContainer">
                             <div id="summaryStatus" class="summary-status" role="status" aria-live="polite"></div>
-                            <p>Click "Generate Summary" to create chapter markers from the transcript.</p>
+                            <p>Click "Generate chapters" to create chapter markers from the transcript.</p>
                         </div>
                         <div id="exportProgress" class="summary-status" role="status" aria-live="polite"></div>
                         <section class="saved-exports" aria-labelledby="savedExportsTitle">
