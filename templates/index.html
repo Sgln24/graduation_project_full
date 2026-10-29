@@ -7,6 +7,7 @@
     <meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0d1017" media="(prefers-color-scheme: dark)">
     <title>LectureSeek - Lecture Video Analysis</title>
+    <script src="/static/js/theme.js"></script>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="/static/styles.css?v=slide-downloads-20261007">
@@ -32,6 +33,51 @@
         .search-highlight.active .exact-match {
             background-color: rgba(255, 140, 0, 0.9);
         }
+        .mindmap-dialog { width: min(1180px, 96vw); }
+        .mindmap-diagram { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 10px; }
+        .mindmap-canvas { position: relative; height: 62vh; border: 1px solid rgba(120,130,170,0.35); border-radius: 10px; overflow: hidden; background: rgba(120,130,170,0.06); }
+        .mindmap-canvas svg { width: 100%; height: 100%; cursor: grab; touch-action: none; display: block; }
+        .mindmap-canvas svg.panning { cursor: grabbing; }
+        .mm-edge { fill: none; stroke: rgba(120,130,170,0.65); stroke-width: 1.6; }
+        .mm-node { cursor: pointer; }
+        .mm-node rect { stroke-width: 1.5; }
+        .mm-node text { font: 600 12px system-ui, sans-serif; pointer-events: none; }
+        .mm-root rect { fill: #4f46e5; stroke: #4338ca; }
+        .mm-root text { fill: #fff; }
+        .mm-section rect { fill: #e0e7ff; stroke: #6366f1; }
+        .mm-concept rect { fill: #fef3c7; stroke: #f59e0b; }
+        .mm-section text, .mm-concept text { fill: #1e1b4b; }
+        .mm-node.selected rect { stroke: #ef4444; stroke-width: 3; }
+        .mm-toggle circle { fill: #fff; stroke: #6366f1; stroke-width: 1.5; }
+        .mm-toggle text { fill: #4338ca; font: 700 13px system-ui, sans-serif; text-anchor: middle; }
+        .mindmap-zoom { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 4px; }
+        .mindmap-zoom button { width: 30px; height: 30px; padding: 0; }
+        .mindmap-detail { max-height: 62vh; overflow: auto; border: 1px solid rgba(120,130,170,0.35); border-radius: 10px; padding: 10px; font-size: 0.9em; }
+        .mindmap-detail h3 { margin: 0 0 6px; }
+        @media (max-width: 860px) { .mindmap-diagram { grid-template-columns: 1fr; } .mindmap-detail { max-height: 30vh; } }
+        .mindmap-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .mindmap-toolbar label { font-size: 0.85em; }
+        .mindmap-toolbar [aria-pressed="true"] { outline: 2px solid currentColor; }
+        .mindmap-body { max-height: 60vh; overflow: auto; margin-top: 8px; }
+        .mindmap-node { margin: 6px 0 6px 14px; padding-left: 10px; border-left: 2px solid rgba(120,130,170,0.5); }
+        .mindmap-root { margin-left: 0; border-left: none; }
+        .mindmap-section > summary { font-weight: 600; }
+        .mindmap-concept > summary { font-weight: 500; }
+        .mindmap-node > summary { cursor: pointer; }
+        .mindmap-content { padding: 4px 0 4px 6px; }
+        .mindmap-ref { margin-left: 4px; padding: 0 6px; font-size: 0.78em; border: 1px solid currentColor; border-radius: 10px; background: transparent; color: inherit; cursor: pointer; }
+        .mindmap-formula { font-family: monospace; }
+        .mindmap-method { display: block; opacity: 0.7; }
+        .mindmap-relations { margin-top: 12px; }
+        .resource-finder-dialog { width: min(1000px, 96vw); }
+        .resource-finder-controls, .resource-finder-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin: 12px 0; }
+        .resource-finder-controls label, .resource-finder-filters label { flex: 1 1 190px; }
+        .resource-finder-controls input[type="text"], .resource-finder-controls input[type="file"], .resource-finder-filters select { display: block; width: 100%; }
+        .resource-finder-results { display: grid; gap: 12px; max-height: 48vh; overflow-y: auto; margin: 12px 0; }
+        .resource-result { border: 1px solid rgba(120,130,170,0.4); border-radius: 8px; padding: 12px; }
+        .resource-result h3 { margin: 0 0 6px; }
+        .resource-result p { margin: 6px 0; }
+        .resource-result-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.85em; opacity: 0.8; }
     </style>
 </head>
 <body>
@@ -47,6 +93,16 @@
                 <span class="brand-mark" aria-hidden="true"><i class="fas fa-play"></i></span>
                 <span class="brand-name">LectureSeek</span>
             </a>
+            <a class="btn btn-secondary" href="/">Home</a>
+            <a class="btn btn-secondary" href="/fusion">Multi-Lecture Fusion</a>
+            <a class="btn btn-secondary" href="/resource-finder">Resource Finder</a>
+            <a class="btn btn-secondary" href="/instructor">Learning space</a>
+            <label class="theme-picker-label" for="workspaceTheme">Theme</label>
+            <select id="workspaceTheme" data-theme-picker aria-label="Color theme">
+                <option value="light">Light</option>
+                <option value="dim">Dim</option>
+                <option value="night">Night</option>
+            </select>
             <input type="text" id="youtubeUrl" class="url-input" aria-label="YouTube URL" placeholder="Paste a YouTube URL (https://www.youtube.com/watch?v=...)">
             <label for="youtubeVideoQuality">Video quality</label>
             <select id="youtubeVideoQuality" title="Higher quality downloads are larger and slower">
@@ -271,6 +327,10 @@
                             <button id="transcriptOptionsBtn" class="btn btn-secondary btn-options" type="button">
                                 Transcript options
                             </button>
+                            <div class="transcript-export-actions">
+                                <button id="openTutorBtn" class="btn btn-secondary btn-action" type="button">AI Tutor</button>
+                                <button id="openMindmapBtn" class="btn btn-secondary btn-action" type="button">AI Mind Map</button>
+                            </div>
                             <div class="transcript-versions" id="transcriptVersionsControl" hidden>
                                 <select id="transcriptVersionSelect" aria-label="Saved transcripts and translations" title="Saved transcripts and translations"></select>
                                 <button id="deleteTranscriptVersionBtn" class="btn btn-danger transcript-version-delete" type="button" aria-label="Delete this saved version" title="Delete this saved version"><i class="fas fa-trash-alt"></i></button>
@@ -873,9 +933,46 @@
         </div>
     </div>
 
+    <dialog id="mindmapDialog" class="options-dialog mindmap-dialog" aria-labelledby="mindmapHeading">
+        <div class="dialog-header">
+            <h2 id="mindmapHeading">Lecture Mind Map</h2>
+            <button class="dialog-close" id="mindmapClose" type="button" aria-label="Close mind map">&times;</button>
+        </div>
+        <div class="mindmap-toolbar">
+            <button id="mindmapGenerateBtn" class="btn btn-primary" type="button">Generate map</button>
+            <button id="mindmapDiagramBtn" class="btn btn-secondary" type="button" aria-pressed="true">Diagram</button>
+            <button id="mindmapFullBtn" class="btn btn-secondary" type="button" aria-pressed="false">Outline</button>
+            <button id="mindmapRevisionBtn" class="btn btn-secondary" type="button" aria-pressed="false">Revision view</button>
+            <label><input id="mindmapUseLlm" type="checkbox" checked> Use local AI to explain (Ollama)</label>
+            <label><input id="mindmapCloud" type="checkbox" checked> Cloud fallback (Groq) if the local model is unavailable — sends lecture text to the cloud</label>
+        </div>
+        <small id="mindmapStatus" role="status" aria-live="polite"></small>
+        <div id="mindmapBody" class="mindmap-body"></div>
+    </dialog>
+
+    <dialog id="tutorDialog" class="options-dialog" aria-labelledby="tutorHeading">
+        <form method="dialog">
+            <div class="dialog-header">
+                <h2 id="tutorHeading">AI Tutor</h2>
+                <button class="dialog-close" type="submit" aria-label="Close tutor">&times;</button>
+            </div>
+            <small>Local-first lecture tutor. Local Ollama is used before any optional cloud fallback.</small>
+            <div id="tutorChat" style="max-height: 280px; overflow-y: auto; border: 1px solid #dfe3f0; border-radius: 8px; padding: 12px; margin: 16px 0; background: rgba(255,255,255,0.04);"></div>
+            <label for="tutorInput">Ask about this lecture</label>
+            <textarea id="tutorInput" rows="3" placeholder="Example: Explain the main idea of the lecture and summarize the key definitions."></textarea>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                <button id="tutorSendBtn" class="btn btn-primary" type="button">Ask</button>
+                <button id="tutorVoiceBtn" class="btn btn-secondary" type="button">Use microphone</button>
+                <label style="display:flex; align-items:center; gap:6px; font-size: 0.9em;" title="Your question and the matching lecture excerpts are sent to Groq only when the local model is unavailable."><input id="tutorFallback" type="checkbox" checked>Cloud fallback (Groq)</label>
+            </div>
+            <small id="tutorStatus" role="status" aria-live="polite"></small>
+        </form>
+    </dialog>
+
     <!-- Scripts -->
     <script src="/static/js/popup-placement.js?v=slide-downloads-20261007"></script>
     <script src="/static/js/layout-resize.js?v=slide-downloads-20261007"></script>
+    <script src="/static/js/mindmap.js"></script>
     <script type="module" src="/static/js/index.js?v=slide-downloads-20261007"></script>
     <script>
     document.getElementById('videoPlayer').addEventListener('click', function() {
@@ -889,6 +986,141 @@
             this.pause();
         }
     });
+
+    (() => {
+        const openTutorBtn = document.getElementById('openTutorBtn');
+        const tutorDialog = document.getElementById('tutorDialog');
+        const tutorInput = document.getElementById('tutorInput');
+        const tutorChat = document.getElementById('tutorChat');
+        const tutorSendBtn = document.getElementById('tutorSendBtn');
+        const tutorVoiceBtn = document.getElementById('tutorVoiceBtn');
+        const tutorFallback = document.getElementById('tutorFallback');
+        const tutorStatus = document.getElementById('tutorStatus');
+        const sessionId = 'tutor-' + Date.now();
+        let recognition = null;
+        let listening = false;
+
+        // Spoken replies are only used when the question itself was spoken.
+        function speakAssistantReply(text) {
+            if (!('speechSynthesis' in window)) {
+                return;
+            }
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance((text || '').replace(/\(\d{1,2}:\d{2}(:\d{2})?\)/g, ''));
+            utterance.lang = 'en-US';
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+
+        function appendMessage(role, text) {
+            const bubble = document.createElement('div');
+            bubble.style.marginBottom = '10px';
+            bubble.innerHTML = '<strong>' + (role === 'assistant' ? 'AI Tutor' : 'You') + ':</strong><div>' + escapeHtml(text).replace(/\n/g, '<br>') + '</div>';
+            tutorChat.appendChild(bubble);
+            tutorChat.scrollTop = tutorChat.scrollHeight;
+        }
+
+        async function askTutor(spoken) {
+            const question = tutorInput.value.trim();
+            if (!question) {
+                tutorStatus.textContent = 'Type a question first.';
+                return;
+            }
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+            const videoId = (window.lectureSeekState && window.lectureSeekState.currentVideoId) || localStorage.getItem('lastVideoId') || '';
+            appendMessage('user', question);
+            tutorInput.value = '';
+            tutorStatus.textContent = 'Thinking…';
+            try {
+                const response = await fetch('/ai_tutor', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_id: videoId,
+                        question,
+                        session_id: sessionId,
+                        allow_cloud_fallback: tutorFallback.checked
+                    })
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Tutor request failed.');
+                }
+                const answer = data.answer || 'No answer available.';
+                appendMessage('assistant', answer);
+                if (spoken === true) {
+                    speakAssistantReply(answer);
+                }
+                const lectureCount = Array.isArray(data.lecture_sources) ? data.lecture_sources.length : 0;
+                const externalCount = Array.isArray(data.external_sources) ? data.external_sources.length : 0;
+                tutorStatus.textContent = 'Lecture evidence: ' + lectureCount + ' segments. External context: ' + externalCount + '. ' + (data.cloud_fallback_notice || '');
+            } catch (error) {
+                appendMessage('assistant', 'I could not answer this from the lecture transcript. ' + error.message);
+                tutorStatus.textContent = error.message;
+            }
+        }
+
+        openTutorBtn.addEventListener('click', () => tutorDialog.showModal());
+        tutorDialog.addEventListener('close', () => {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+            }
+            if (recognition && listening) {
+                recognition.abort();
+            }
+        });
+        tutorSendBtn.addEventListener('click', () => askTutor(false));
+        tutorInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                askTutor(false);
+            }
+        });
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'en-US';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.onresult = (event) => {
+                tutorInput.value = event.results[0][0].transcript;
+                askTutor(true);
+            };
+            recognition.onerror = () => {
+                tutorStatus.textContent = 'Microphone capture failed. Please try again.';
+            };
+            recognition.onend = () => {
+                listening = false;
+                tutorVoiceBtn.textContent = 'Use microphone';
+            };
+            tutorVoiceBtn.addEventListener('click', () => {
+                if (listening) {
+                    recognition.stop();
+                    return;
+                }
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                }
+                listening = true;
+                tutorVoiceBtn.textContent = 'Stop listening';
+                recognition.start();
+                tutorStatus.textContent = 'Listening…';
+            });
+        } else {
+            tutorVoiceBtn.disabled = true;
+            tutorVoiceBtn.title = 'Speech recognition is not available in this browser';
+        }
+
+        if (!tutorChat.textContent.trim()) {
+            appendMessage('assistant', 'I can answer questions about the current lecture using transcript evidence and can explain when the lecture evidence is insufficient.');
+        }
+    })();
     </script>
 </body>
 </html> 

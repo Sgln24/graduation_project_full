@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import sys
 import unittest
 import tempfile
@@ -34,7 +35,7 @@ sys.modules.setdefault("google", google_module)
 sys.modules.setdefault("google.genai", google_genai_module)
 sys.modules.setdefault("google.genai.types", google_genai_types_module)
 
-from processors.summary_processor import SummaryProcessor
+from processors.summary_processor import SummaryProcessor, _safe_error_text
 
 
 class FakeGeminiModels:
@@ -70,6 +71,17 @@ class CompleteFakeGeminiModels:
 
 
 class SummaryProcessorTranslationTests(unittest.TestCase):
+    def test_provider_error_text_redacts_configured_and_token_shaped_credentials(self):
+        configured_key = "configured-test-secret-value"
+        token_shaped_key = "sk-abcdefghijklmnopqrstuvwxyz012345"
+        with mock.patch.dict(os.environ, {"GOOGLE_API_KEY": configured_key}):
+            message = _safe_error_text(RuntimeError(
+                f"request failed with {configured_key} and {token_shaped_key}"
+            ))
+        self.assertNotIn(configured_key, message)
+        self.assertNotIn(token_shaped_key, message)
+        self.assertEqual(message.count("[redacted"), 2)
+
     def test_unchanged_output_is_not_retained_as_resumable_translation(self):
         from translation_checkpoint import translate_with_resume
         processor = self._gemini_processor(CompleteFakeGeminiModels())

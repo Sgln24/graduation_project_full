@@ -45,6 +45,20 @@ GROQ_CHAPTER_CHUNK_CHARS = 16000
 CHAPTER_CHUNK_CHARS = 40000
 CHAPTER_INSTRUCTIONS_LIMIT = 1000
 TRANSCRIPT_LANGUAGES = {"de", "en", "ar", "pl"}
+
+
+def _safe_error_text(error):
+    text = str(error)
+    for name in ("GOOGLE_API_KEY", "GROQ_API_KEY", "OPENAI_API_KEY"):
+        secret = os.getenv(name)
+        if secret:
+            text = text.replace(secret, "[redacted]")
+    return re.sub(
+        r"(?i)\b(?:AIza[0-9a-z_-]{20,}|gsk_[0-9a-z_-]{20,}|sk-[0-9a-z_-]{20,})\b",
+        "[redacted credential]", text,
+    )
+
+
 # Openings that describe the lesson instead of stating its content.
 FILLER_OPENING = re.compile(
     r"^\s*(?:(?:in|throughout)\s+this\s+(?:part|chapter|section|segment|lecture|video|session|lesson)\s*,?\s*)?"
@@ -133,7 +147,7 @@ class SummaryProcessor:
             self.client = genai.Client(api_key=GOOGLE_API_KEY)
             self.model = True
         except Exception as e:
-            print(f"Warning: Gemini API initialization failed: {str(e)}")
+            print(f"Warning: Gemini API initialization failed ({type(e).__name__}).")
             self.model = None
 
     def _refresh_gemini_client(self):
@@ -144,7 +158,7 @@ class SummaryProcessor:
                 self.client = genai.Client(api_key=api_key)
                 self.model = True
             except Exception as error:
-                print(f"Warning: Gemini API initialization failed: {error}")
+                print(f"Warning: Gemini API initialization failed ({type(error).__name__}).")
 
     def _refresh_openai_client(self):
         """Load an OpenAI client if a key was configured after startup."""
@@ -153,7 +167,7 @@ class SummaryProcessor:
             try:
                 self.openai_client = OpenAI(api_key=api_key)
             except Exception as error:
-                print(f"Warning: OpenAI API initialization failed: {error}")
+                print(f"Warning: OpenAI API initialization failed ({type(error).__name__}).")
 
     def _refresh_groq_client(self):
         """Load a Groq client (OpenAI-compatible) if GROQ_API_KEY is configured."""
@@ -162,7 +176,7 @@ class SummaryProcessor:
             try:
                 self.groq_client = OpenAI(api_key=api_key, base_url=GROQ_BASE_URL)
             except Exception as error:
-                print(f"Warning: Groq API initialization failed: {error}")
+                print(f"Warning: Groq API initialization failed ({type(error).__name__}).")
 
     def _refresh_clients(self):
         for refresh in (
@@ -483,7 +497,7 @@ class SummaryProcessor:
                         error = RuntimeError(
                             f"no answer within {CHAPTER_TIMEOUT_SECONDS} seconds (the model is busy or slow)"
                         )
-                    failures.append(f"{PROVIDER_LABELS[candidate]} {model}: {error}")
+                    failures.append(f"{PROVIDER_LABELS[candidate]} {model}: {_safe_error_text(error)}")
                     response_text = None
                     if isinstance(error, json.JSONDecodeError):
                         continue
@@ -497,7 +511,8 @@ class SummaryProcessor:
                     if not self._is_quota_error(error):
                         return JSONResponse({
                             "success": False,
-                            "error": f"{PROVIDER_LABELS[candidate]} {model} could not generate chapters: {error}",
+                            "error": f"{PROVIDER_LABELS[candidate]} {model} could not generate chapters: "
+                                     f"{_safe_error_text(error)}",
                         })
             if response_text is None:
                 return JSONResponse({
@@ -530,7 +545,7 @@ class SummaryProcessor:
         except Exception as e:
             return JSONResponse({
                 "success": False,
-                "error": str(e)
+                "error": _safe_error_text(e)
             })
 
     async def generate_video_summary(self, transcript, requested_model=None, transcript_language=""):
@@ -594,7 +609,7 @@ class SummaryProcessor:
                     self._mark_unavailable(provider, model)
                 if self._is_quota_error(error):
                     self._mark_quota_exhausted(provider, model)
-                reason = "request timed out" if isinstance(error, asyncio.TimeoutError) else str(error)
+                reason = "request timed out" if isinstance(error, asyncio.TimeoutError) else _safe_error_text(error)
                 failures.append(f"{PROVIDER_LABELS[provider]} {model}: {reason}")
         raise RuntimeError("Could not summarize the whole video. " + " | ".join(failures))
 
@@ -754,7 +769,7 @@ class SummaryProcessor:
             except Exception as error:
                 if self._is_quota_error(error):
                     self._mark_quota_exhausted(provider, model)
-                print(f"Title suggestion with {provider} {model} failed: {error}")
+                print(f"Title suggestion with {provider} {model} failed: {_safe_error_text(error)}")
         return None
 
     @staticmethod
@@ -971,7 +986,7 @@ class SummaryProcessor:
                         or "json_validate_failed" in message or "failed to generate json" in message
                     ):
                         print(f"{PROVIDER_LABELS[provider]} {model} returned invalid chapter JSON "
-                              f"(part {number}/{total}, attempt {attempt + 1}): {error}")
+                              f"(part {number}/{total}, attempt {attempt + 1}): {_safe_error_text(error)}")
                         invalid_json += 1
                         if invalid_json == 1 and attempt < 5:
                             prompt += (
@@ -1105,7 +1120,7 @@ class SummaryProcessor:
                     "usage": translation_usage(requests),
                 })
             except Exception as error:
-                print(f"Translation progress callback failed: {error}")
+                print(f"Translation progress callback failed: {_safe_error_text(error)}")
 
         report(
             f"Translating {len(remaining_items)} lines in {len(batches)} batches with {model_label}"
@@ -1225,12 +1240,12 @@ class SummaryProcessor:
                             if attempt < attempts - 1:
                                 delay = 1
                                 report(f"{model_label}: batch {batch_number} request failed; "
-                                       f"retrying in {delay:.1f}s: {str(error)[:180]}")
+                                       f"retrying in {delay:.1f}s: {_safe_error_text(error)[:180]}")
                                 await asyncio.sleep(delay)
                     if raw_result is None:
                         raise RuntimeError(
                             f"Translation batch {batch_number} {request_label} request failed "
-                            f"after {attempt + 1} attempt(s): {last_error}"
+                            f"after {attempt + 1} attempt(s): {_safe_error_text(last_error)}"
                         ) from last_error
 
                     try:
@@ -1324,7 +1339,7 @@ class SummaryProcessor:
             print(
                 f"{PROVIDER_LABELS[provider]} {selected_model} translation unavailable; "
                 f"trying {PROVIDER_LABELS[next_provider]} {next_model} for the "
-                f"{total_segments - len(done)} remaining lines: {error}"
+                f"{total_segments - len(done)} remaining lines: {_safe_error_text(error)}"
             )
             report(
                 f"{model_label} {'returned unusable output' if malformed else 'is busy or out of quota'}; continuing the remaining "
@@ -1336,7 +1351,7 @@ class SummaryProcessor:
                 _done=done, _started_at=started_at,
                 allow_fallback=allow_fallback, _requests=requests,
             )
-            result.setdefault("fallback_reason", str(error)[:300])
+            result.setdefault("fallback_reason", _safe_error_text(error)[:300])
             return result
         translated = [
             {**item, "text": done[f"segment-{index}"]}
@@ -1392,13 +1407,13 @@ class SummaryProcessor:
         except TranslationServiceError as error:
             if not allow_fallback or not error.transient or len(chain) < 2:
                 raise
-            report(f"{error} Continuing remaining lines with {PROVIDER_LABELS[chain[1][0]]}.")
+            report(f"{_safe_error_text(error)} Continuing remaining lines with {PROVIDER_LABELS[chain[1][0]]}.")
             result = await self.translate_transcript(
                 transcript, target, _chain=chain[1:], _chain_offset=offset + 1,
                 on_progress=on_progress, _done=done, _started_at=started_at,
                 allow_fallback=allow_fallback, _requests=requests,
             )
-            result.setdefault("fallback_reason", str(error))
+            result.setdefault("fallback_reason", _safe_error_text(error))
             return result
         return {
             "transcript": [{**item, "text": done[f"segment-{index}"]} for index, item in enumerate(transcript)],

@@ -61,6 +61,11 @@ export const state = {
     transcript_to_ocr: {}, // Map for quick lookup: transcript_index -> OCR matches
     sceneDetectionThreshold: Number(localStorage.getItem('contentCutThresholdV1')) || 27
 };
+window.lectureSeekState = state;
+window.lectureSeek = {
+    getCurrentVideoId: () => state.currentVideoId,
+    getSessionId: () => `lecture-${(state.currentVideoId || 'default')}`
+};
 
 window.addEventListener('video-file-selected', (event) => {
     const file = event.detail;

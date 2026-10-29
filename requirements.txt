@@ -1,5 +1,9 @@
 fastapi
 uvicorn
+SQLAlchemy>=2.0,<3
+alembic>=1.13,<2
+PyJWT>=2.8,<3
+pydantic>=2.7,<3
 yt-dlp
 youtube-transcript-api
 python-multipart
@@ -7,6 +11,7 @@ jinja2
 google-genai
 openai
 python-docx
+# Required by application startup and PDF export routes.
 reportlab
 # Right-to-left (Arabic) text in PDF exports
 arabic-reshaper

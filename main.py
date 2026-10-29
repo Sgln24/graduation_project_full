@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, UploadFile, File, Form, APIRouter
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
@@ -7,8 +7,10 @@ import json
 import copy
 import logging
 import hashlib
+import uuid
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
+from types import SimpleNamespace
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -63,12 +65,23 @@ from chapter_projects import router as chapter_projects_router, save_video_metad
 import content_edits
 from content_languages import localized_scenes, scene_title
 import video_summary
+from fusion import (
+    FusionValidationError,
+    MAX_DOCUMENT_BYTES,
+    LOCAL_MODEL_DEFAULT,
+    ensure_local_model_available,
+    run_local_fusion,
+)
+from resource_finder import ResourceFinderError, find_resources, get_page
+from tutor import TutorError, answer_question
+import mindmap
 
 load_dotenv()
 
 # Initialize FastAPI app
 @asynccontextmanager
 async def lifespan(app):
+    instructor_lms.init_db()
     transcript_processor.restore_interrupted_speaker_jobs()
     yield
 
@@ -77,8 +90,31 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(content_edits_router)
 app.include_router(chapter_projects_router)
 app.include_router(library.router)
+from instructor_lms import router as instructor_lms_router
+import instructor_lms
+app.include_router(instructor_lms_router)
 
 ensure_app_directories()
+
+@app.middleware("http")
+async def protect_lms_video_resources(request: Request, call_next):
+    """Apply LMS enrollment checks to existing media and analysis URLs."""
+    parts = request.url.path.strip("/").split("/")
+    job_stores = {
+        "export_jobs": globals().get("export_jobs"),
+        "chapter_project_jobs": chapter_projects.jobs,
+        "chapter_video_jobs": chapter_projects.video_jobs,
+    }
+    if len(parts) >= 2 and parts[0] in job_stores and job_stores[parts[0]]:
+        try:
+            job = job_stores[parts[0]].read(parts[1])
+        except (ValueError, FileNotFoundError):
+            job = None
+        if job and job.get("video_id") and not instructor_lms.legacy_video_access_allowed(
+            request, job["video_id"],
+        ):
+            return JSONResponse({"detail": "This lecture is not available to your account."}, status_code=403)
+    return await instructor_lms.protect_lms_video_resources(request, call_next)
 
 @app.middleware("http")
 async def disable_frontend_cache(request: Request, call_next):
@@ -159,6 +195,192 @@ async def runtime_status():
             "error": str(error),
             **translation_status,
         })
+
+
+@app.get("/fusion_runtime_status")
+async def fusion_runtime_status():
+    """Return the fusion runtime configuration and readiness (local Ollama, optional Groq fallback)."""
+    cloud_available = bool(os.getenv("GROQ_API_KEY"))
+    try:
+        status = ensure_local_model_available(LOCAL_MODEL_DEFAULT, require_running=True)
+        return JSONResponse({
+            "runtime": status["runtime"],
+            "model": status["model"],
+            "ready": True,
+            "note": "Local inference is used first. Cloud fallback only runs if you opt in and the local model is unavailable.",
+            "cloud_fallback_allowed": cloud_available,
+        })
+    except Exception as error:
+        return JSONResponse({
+            "runtime": "Ollama",
+            "model": LOCAL_MODEL_DEFAULT,
+            "ready": False,
+            "error": str(error),
+            "note": "Install Ollama and pull the local model, or enable cloud fallback (needs GROQ_API_KEY).",
+            "cloud_fallback_allowed": cloud_available,
+        }, status_code=503)
+
+
+@app.post("/fusion_jobs")
+async def start_fusion_job(
+    files: list[UploadFile] = File(default=[]),
+    video_sources: str = Form(""),
+    model: str = Form(LOCAL_MODEL_DEFAULT),
+    allow_cloud_fallback: bool = Form(False),
+):
+    """Create a fusion export; Groq is used only when the user opts in and Ollama is unavailable."""
+    try:
+        videos = [item.strip() for item in str(video_sources).split(",") if item.strip()]
+        # UploadFile.read is async, so read the bytes here and hand plain objects to the sync fusion code.
+        uploads = []
+        for file in files:
+            if file.filename:
+                content = await file.read()
+                uploads.append(SimpleNamespace(filename=file.filename, read=lambda data=content: data))
+        job_id = uuid.uuid4().hex
+        output_dir = EXPORTS_DIR / "fusion" / job_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        result = await asyncio.to_thread(
+            run_local_fusion, video_sources=videos, uploaded_files=uploads, model_name=model, output_dir=output_dir,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
+        return JSONResponse({
+            "job_id": job_id,
+            "status": "complete",
+            "title": result["title"],
+            "pptx_url": f"/fusion_jobs/{job_id}/download/pptx",
+            "pdf_url": f"/fusion_jobs/{job_id}/download/pdf",
+            "relationships": result["relationships"],
+            "source_count": len(result["sources"]),
+            "local_model": result["local_model"],
+            "used_cloud_fallback": result.get("used_cloud_fallback", False),
+        })
+    except FusionValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    finally:
+        for file in files:
+            await file.close()
+
+
+@app.get("/fusion_jobs/{job_id}/download/{kind}")
+async def download_fusion_artifact(job_id: str, kind: str):
+    if not re.fullmatch(r"[0-9a-f]{32}", job_id) or kind not in {"pptx", "pdf"}:
+        raise HTTPException(status_code=404, detail="Fusion export not found.")
+    matches = sorted((EXPORTS_DIR / "fusion" / job_id).glob(f"*.{kind}"))
+    if not matches:
+        raise HTTPException(status_code=404, detail="Fusion export not found.")
+    return FileResponse(matches[0], filename=f"lecture_fusion.{kind}")
+
+
+@app.post("/resource_finder/search")
+async def search_learning_resources(
+    topic: str = Form(""),
+    file: Optional[UploadFile] = File(default=None),
+    types: List[str] = Form(default=[]),
+    use_llm: bool = Form(True),
+    allow_cloud_fallback: bool = Form(False),
+):
+    try:
+        filename = file.filename if file and file.filename else ""
+        data = await file.read(MAX_DOCUMENT_BYTES + 1) if file else None
+        record = await asyncio.to_thread(
+            find_resources,
+            topic=topic,
+            filename=filename,
+            data=data,
+            types=types,
+            use_llm=use_llm,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
+        return JSONResponse(get_page(record["search_id"]))
+    except ResourceFinderError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    finally:
+        if file:
+            await file.close()
+
+
+@app.get("/resource_finder/{search_id}")
+async def get_learning_resources(
+    search_id: str,
+    offset: int = 0,
+    resource_type: str = "",
+    platform: str = "",
+    difficulty: str = "",
+    language: str = "",
+):
+    filters = {
+        key: value for key, value in {
+            "type": resource_type,
+            "platform": platform,
+            "difficulty": difficulty,
+            "language": language,
+        }.items() if value
+    }
+    try:
+        return JSONResponse(get_page(search_id, filters=filters, offset=offset))
+    except ResourceFinderError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@app.post("/ai_tutor")
+async def ai_tutor(request: Request):
+    """Provide a lecture-grounded AI tutor response that keeps lecture evidence separate from external context."""
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON body required for AI tutor requests.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="AI tutor payload must be an object.")
+    video_id = str(payload.get("video_id") or "")
+    question = str(payload.get("question") or "").strip()
+    session_id = str(payload.get("session_id") or "default")
+    allow_fallback = bool(payload.get("allow_cloud_fallback", False))
+    try:
+        result = answer_question(
+            video_id,
+            question,
+            session_id=session_id,
+            allow_cloud_fallback=allow_fallback,
+        )
+    except TutorError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return JSONResponse(result)
+
+
+@app.get("/mindmap/{video_id}")
+async def get_mindmap(video_id: str):
+    try:
+        cached = mindmap.load_cached(video_id)
+    except TutorError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if not cached:
+        raise HTTPException(status_code=404, detail="No concept map has been generated for this lecture yet.")
+    return JSONResponse(cached)
+
+
+@app.post("/mindmap/{video_id}/generate")
+async def generate_mindmap(video_id: str, request: Request):
+    """Build a transcript-grounded concept map; cloud models are used only with explicit consent."""
+    try:
+        options = await request.json()
+    except Exception:
+        options = {}
+    if not isinstance(options, dict):
+        options = {}
+    try:
+        result = await asyncio.to_thread(
+            mindmap.generate_mindmap,
+            video_id,
+            use_llm=bool(options.get("use_llm", True)),
+            allow_cloud_fallback=bool(options.get("allow_cloud_fallback", False)),
+        )
+    except TutorError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return JSONResponse(result)
+
 
 # Mount static directory
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -454,13 +676,54 @@ ocr_processor = OCRProcessor(send_sse_update=send_sse_update)
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
-    response = templates.TemplateResponse(
-    request=request,
-    name="index.html"
-    )
+    path = Path(__file__).resolve().parent / "templates" / "home.html"
+    return HTMLResponse(path.read_text(encoding="utf-8"), headers={
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+    })
+
+
+@app.get("/workspace", response_class=HTMLResponse)
+async def lecture_workspace(request: Request):
+    try:
+        instructor_lms.current_user(request)
+    except HTTPException as error:
+        if error.status_code == 401:
+            return RedirectResponse("/", status_code=303)
+        raise
+    response = templates.TemplateResponse(request=request, name="index.html")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     return response
+
+
+@app.get("/fusion", response_class=HTMLResponse)
+async def fusion_workspace(request: Request):
+    try:
+        instructor_lms.current_user(request)
+    except HTTPException as error:
+        if error.status_code == 401:
+            return RedirectResponse("/", status_code=303)
+        raise
+    response = templates.TemplateResponse(request=request, name="fusion.html")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
+@app.get("/resource-finder", response_class=HTMLResponse)
+async def resource_finder_workspace(request: Request):
+    try:
+        instructor_lms.current_user(request)
+    except HTTPException as error:
+        if error.status_code == 401:
+            return RedirectResponse("/", status_code=303)
+        raise
+    response = templates.TemplateResponse(request=request, name="resource_finder.html")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
 
 @app.post("/upload_video")
 async def upload_video(background_tasks: BackgroundTasks, video: UploadFile = File(...)):
@@ -505,7 +768,7 @@ async def upload_video(background_tasks: BackgroundTasks, video: UploadFile = Fi
             temporary_path.unlink()
 
 @app.get("/uploaded_videos")
-async def uploaded_videos():
+async def uploaded_videos(request: Request):
     metadata_path = VIDEO_DIR / "metadata.json"
     try:
         metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
@@ -519,6 +782,8 @@ async def uploaded_videos():
             or video_path.name.endswith("_video_quality.json")
             or video_path.suffix == ".pending"
         ):
+            continue
+        if not instructor_lms.legacy_video_access_allowed(request, video_path.stem):
             continue
         videos.append({
             "video_id": video_path.stem,
@@ -2361,10 +2626,11 @@ async def saved_exports(video_id: str):
     return {"exports": export_jobs.list(video_id)}
 
 @app.get("/saved_caption_videos")
-async def saved_caption_videos():
+async def saved_caption_videos(request: Request):
     return {"exports": [
         job for job in export_jobs.list()
         if job["title"].startswith("Captioned video - ")
+        and instructor_lms.legacy_video_access_allowed(request, job["video_id"])
     ]}
 
 

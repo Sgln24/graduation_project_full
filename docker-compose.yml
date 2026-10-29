@@ -1,0 +1,32 @@
+services:
+  slidedec:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: slidedec:local
+    container_name: slidedec
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Preserve the project's static assets and generated files on the host.
+      # This assumes the repository's existing static/ directory is present.
+      - ./static:/app/static
+      # Persist downloaded Hugging Face / PyTorch model caches between runs.
+      - slidedec_hf_cache:/root/.cache/huggingface
+      - slidedec_torch_cache:/root/.cache/torch
+    restart: unless-stopped
+    init: true
+    
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+    
+volumes:
+  slidedec_hf_cache:
+  slidedec_torch_cache:
+  ollama_data:

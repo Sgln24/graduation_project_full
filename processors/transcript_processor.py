@@ -328,6 +328,10 @@ class TranscriptProcessor:
             
             # Start background task to generate transcript
             if os.path.exists(output_path):
+                try:
+                    transcript_versions.sync_existing(video_id)
+                except Exception as error:
+                    print(f"Could not store the previous transcript version: {error}")
                 shutil.copyfile(output_path, self._speaker_backup_path(video_id))
                 os.remove(output_path)
             progress_path.write_text(
@@ -488,6 +492,16 @@ class TranscriptProcessor:
             f": {error}" if error is not None
             else f" with exit code {exit_code}"
         )
+        backup_path = self._speaker_backup_path(video_id)
+        if backup_path.exists():
+            try:
+                os.replace(backup_path, output_path)
+                log_transcript_step(
+                    video_id,
+                    "Restored the previous transcript after the worker stopped unexpectedly",
+                )
+            except OSError as restore_error:
+                detail += f"; also failed to restore the previous transcript: {restore_error}"
         guidance = (
             " The worker received SIGTERM (a termination request), not a CUDA "
             "library error. Check whether the server/runtime was restarted or "
@@ -661,12 +675,24 @@ class TranscriptProcessor:
             if progress_file.exists():
                 progress_file.unlink()
             self._remove_whisper_phase(video_id)
+            error_message = str(e)
             if original_transcript:
                 with open(output_path, "w", encoding="utf-8") as file:
                     json.dump(original_transcript, file, ensure_ascii=False)
                 self._speaker_backup_path(video_id).unlink(missing_ok=True)
+            else:
+                backup_path = self._speaker_backup_path(video_id)
+                if backup_path.exists():
+                    try:
+                        os.replace(backup_path, output_path)
+                        step("Restored the previous transcript after processing failed")
+                    except OSError as restore_error:
+                        error_message += (
+                            f"; also failed to restore the previous transcript: "
+                            f"{restore_error}"
+                        )
             with open(str(TRANSCRIPTS_DIR / f"{video_id}_whisper_error.txt"), 'w') as f:
-                f.write(str(e))
+                f.write(error_message)
 
     async def get_whisper_status(self, video_id: str):
         """Check the status of Whisper transcript generation."""

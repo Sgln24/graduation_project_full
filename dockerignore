@@ -1,0 +1,55 @@
+# Git metadata and local development environments
+.git
+.gitignore
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Secrets and environment-specific configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build/test outputs
+build/
+dist/
+*.egg-info/
+node_modules/
+
+# Large local media and generated artifacts.
+# The static/ directory itself is copied so the web UI assets are included;
+# exclude common generated media/data subdirectories from the image build.
+static/videos/
+static/uploads/
+static/transcripts/
+static/scenes/
+static/summaries/
+static/images/
+static/thumbnails/
+static/exports/
+static/temp/
+static/tmp/
+
+# Local model/checkpoint artifacts can be large. Keep slide-model.pt in the
+# image if it is required by project_paths.py; exclude other checkpoints.
+*.onnx
+*.safetensors
+*.ckpt
+# Do not add a blanket *.pt rule: the repository's slide-model.pt is used.

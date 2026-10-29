@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>LectureSeek · Learning space</title>
+    <script src="/static/js/theme.js"></script>
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/instructor.css">
+</head>
+<body>
+    <div id="authView" class="auth-shell" hidden>
+        <a class="auth-brand" href="/"><span class="brand-mark">L</span><span>LectureSeek</span></a>
+        <section class="auth-card">
+            <span class="eyebrow">TEACHING, MADE CLEAR</span>
+            <h1 id="authTitle">Welcome back</h1>
+            <p id="authDescription">Sign in to manage your courses and lectures.</p>
+            <form id="authForm">
+                <label id="nameField" hidden>Full name<input name="name" autocomplete="name"></label>
+                <label>Email<input name="email" type="email" autocomplete="email" required></label>
+                <label>Password<input name="password" type="password" autocomplete="current-password" minlength="12" required></label>
+                <button class="button primary full" id="authSubmit" type="submit">Sign in</button>
+            </form>
+            <p id="authHint" class="muted small"></p>
+            <p id="authError" class="error-text" role="alert"></p>
+        </section>
+    </div>
+    <div id="appView" class="app-shell" hidden>
+        <aside class="sidebar">
+            <a class="brand" href="/"><span class="brand-mark">L</span><span>LectureSeek</span></a>
+            <div class="workspace-label">LEARNING SPACE</div>
+            <nav id="navigation"></nav>
+            <div class="sidebar-bottom">
+                <div class="profile"><span class="avatar" id="avatar">I</span><span><b id="profileName"></b><small id="profileRole"></small></span></div>
+                <button class="signout" id="signOut">Sign out</button>
+            </div>
+        </aside>
+        <main class="main">
+            <header class="topbar">
+                <div><span class="eyebrow" id="pageKicker">LECTURESEEK LMS</span><h1 id="pageTitle">Overview</h1></div>
+                <div class="top-actions"><a class="button" id="workspaceLink" href="/workspace">Lecture tools</a><label class="theme-picker-label" for="lmsTheme">Theme</label><select id="lmsTheme" data-theme-picker aria-label="Color theme"><option value="light">Light</option><option value="dim">Dim</option><option value="night">Night</option></select><span class="status-dot">Workspace ready</span><button class="icon-button" aria-label="Notifications">◌</button></div>
+            </header>
+            <div id="notice" class="notice" role="status"></div>
+            <div id="content" class="content"></div>
+        </main>
+    </div>
+    <script type="module" src="/static/js/instructor.js"></script>
+</body>
+</html>

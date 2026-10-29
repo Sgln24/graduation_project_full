@@ -63,8 +63,110 @@ These are the changes specifically described as fixes to the inherited project. 
 - Detect slides independently of transcript generation; run OCR, download slide images, and export OCR text.
 - Identify speakers without retranscribing, with controls and progress for speaker detection.
 - Create grouped HTML, Word, PDF, SCORM, transcript, and media exports, and retain completed exports for later viewing or download.
+- Use Lecture Fusion, the lecture-grounded AI Tutor, lecture Mind Maps, and Resource Finder from the lecture workspace.
 
 **In short:** this fork aims to be a more practical end-to-end lecture workflow: it addresses early environment compatibility, gives users more control over analysis, helps preserve work when processing fails, and connects transcripts, translations, chapters, slides, and exports in one interface.
+
+## Study tools in the lecture workspace
+
+After signing in, open **Lecture tools** from the learning space. **AI Tutor** and **AI Mind Map** are grouped with the transcript controls in the lecture workspace because they use the active lecture transcript. **Multi-Lecture Fusion** and **Resource Finder** each have a separate page, linked beside Home and available at `/fusion` and `/resource-finder`. Fusion combines saved lectures and/or documents; Resource Finder searches by topic or an uploaded document and supports result filters and pagination. The home page navbar has an **AI tools** dropdown (beside Platform) linking to Lecture Fusion and Resource Finder. All four features (Tutor, Mind Map, Fusion, Resource Finder) use a local model first and offer a Groq cloud fallback checkbox (on by default; it only runs when the local model is unavailable and `GROQ_API_KEY` is set). The AI Mind Map opens as a zoomable node-link diagram (click a topic for details and timestamps, use +/− to expand); Outline and Revision views remain. The AI Tutor answers in text and speaks only when you ask with the microphone button. Resource discovery uses external search providers, while Groq analysis/ranking is optional.
+
+## Local Multi-Lecture Fusion
+
+The project now includes a fusion workflow that accepts up to five lecture videos, uploaded source documents, or a supported mixed-source combination. A job validates the source count and aggregate document size before processing, rejects unsupported formats and corrupted files, and then builds a synthesized lecture using local evidence, with an optional Groq cloud fallback.
+
+Key constraints:
+
+- Video limit: 5 sources per job.
+- Uploaded-document limit: 20 MB total per job.
+- Supported uploaded document types: `.txt`, `.md`, `.docx`, `.pdf`, and `.pptx`.
+- Local runtime requirement: Ollama is the required local model runtime.
+- Local model default: `llama3.2:3b`.
+- Cloud fallback is opt-in: when Ollama is unavailable and **Allow cloud fallback** is ticked (needs `GROQ_API_KEY`), excerpts of the source text are sent to Groq to write the unified narrative. Relationship discovery and exports always run locally.
+
+The fusion pipeline creates a local evidence graph, synthesizes a unified lecture narrative, and emits a PPTX plus a PDF export with traceable source references. The HTTP route is available at `/fusion_jobs` and the runtime status endpoint is `/fusion_runtime_status`.
+
+## Instructor and student LMS
+
+The public project page at `/` explains the platform and offers role selection,
+account registration, and login. The first instructor can register during
+initial setup; later instructor accounts must be created by a signed-in
+instructor from **Student management**. Students can register themselves and
+will only see courses where an instructor has enrolled them. Both roles use the
+same LMS navigation and can open the existing analysis tools at `/workspace`.
+The tools require a signed-in account. `/instructor` and `/student` open the
+role-aware learning space.
+
+Instructors can create and publish courses, organize modules and resources,
+create student accounts, manage enrollments, upload videos or import YouTube
+lectures, review AI-generated transcripts/chapters/summaries, create quizzes,
+grade submissions, and view recorded course analytics. AI-generated lecture
+content remains a draft until an instructor reviews and approves it. Modules,
+learning resources, lectures, quizzes, and courses have independent
+draft/published visibility.
+
+LMS data is stored in `slidedec_lms.sqlite3` in the application directory. Set
+`SLIDEDEC_LMS_DB` to use another persistent SQLite file location (these setting
+and database names are retained for compatibility). Sessions use HTTP-only,
+same-site cookies; set `HTTPS_ONLY_COOKIE=1` when serving the application over
+HTTPS. The LMS reports quiz results and enrollment-based progress from saved
+data. For authorized student playback in the LMS video player, the application
+records playback events and intervals without collecting IP addresses or
+device fingerprints. Access events are distinct from playback intervals.
+Repeated media intervals are counted once for coverage; approximate elapsed
+watch time may include replays. Reported duration and completion are playback
+telemetry, not evidence of attention; unsupported or untracked playback is not
+inferred. Playback analytics remain unavailable until actual intervals have
+been recorded. Choose Light, Dim, or Night from the theme selector; the
+preference is saved in the browser.
+
+Install the declared dependencies with `python -m pip install -r requirements.txt`.
+LMS authentication requires `LECTURESEEK_JWT_SECRET` to be set to a random
+secret containing at least 32 bytes; generate one with
+`python -c "import secrets; print(secrets.token_urlsafe(48))"` and keep it out of
+source control. New sessions use signed JWTs in the HTTP-only cookie and also
+accept `Authorization: Bearer <token>` for API clients. Token hashes are stored
+in SQLite so logout revokes the token; pre-existing opaque session cookies
+remain valid until they expire or are revoked.
+
+Alembic runs at LMS database initialization and currently manages the
+`lectureseek_jobs` table plus ORM mappings for users and sessions. Existing LMS
+tables are still initialized and upgraded by the legacy SQLite migration code;
+the Alembic revision does not yet migrate all existing LMS data or provide a
+durable queue worker. Keep the application on SQLite and do not set
+`LECTURESEEK_DATABASE_URL` to PostgreSQL until the remaining raw-SQL tables and
+file-backed stores have been migrated and verified for that database.
+
+Instructor Learning Analytics uses persisted course data only. Published quiz
+performance uses each enrolled student's latest submitted attempt; ungraded
+manual work is excluded from grade distributions. Objective question
+correctness is reported as an observed response indicator only when at least
+five responses exist. Completion figures cover submitted published quizzes
+and tracked video playback; they do not represent proof of learning. Module
+figures currently cover published videos only, while resources and reading
+views are not tracked. Missing events are shown as unobserved rather than
+invented. Instructors can open course-scoped individual progress details.
+
+Instructors may publish courses as public (discoverable in the student course
+catalog) or private (enrollment by instructor action or a shareable invitation
+link). A private link grants enrollment only after a student signs in; it does
+not expose unpublished courses or content.
+
+Quizzes support multiple-choice, true/false, short-answer, and essay items with
+per-question marks, optional deadlines and time limits, and attempt limits.
+Progress is saved as students answer; interrupted attempts can be resumed until
+their deadline or time limit expires. Objective-only quizzes are graded
+automatically. Any quiz containing a written response is held for manual
+instructor grading; grades and feedback are range-checked and grade changes are
+retained in an audit history. Course totals use the latest submitted attempt
+for each published quiz; quizzes without a graded submission contribute no
+earned points. Retakes remain visible as separate attempts. AI question
+suggestions are available from approved, published lecture transcripts and
+require instructor confirmation before being saved to a quiz.
+Instructors can also author multiple-choice and true/false questions at video
+timestamps. Enrolled students can submit one response per checkpoint; response
+counts and correctness rates are reported separately from course quizzes, with
+correctness withheld until at least five responses are available.
 
 ### Key Features
 
@@ -485,8 +587,13 @@ brew install tesseract ffmpeg
 
 3. **Install dependencies:**
    ```bash
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
    ```
+
+   ReportLab is included as a required dependency because the application
+   imports PDF export support during startup. Install the complete requirements
+   in the same Python environment used to launch Uvicorn; installing a PDF
+   package in a different environment will not make it available to the app.
 
    Local Whisper and speaker identification decode audio with system FFmpeg
    and pass 16 kHz mono samples directly to their models, bypassing PyAV's file

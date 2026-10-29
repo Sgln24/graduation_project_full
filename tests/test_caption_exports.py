@@ -130,6 +130,7 @@ class CaptionTests(unittest.TestCase):
             "caption_text": caption_text, "caption_filename": caption_filename,
             "video_duration": duration, "render_captioned_video": render,
             "validate_caption_style": validate_caption_style,
+            "instructor_lms": SimpleNamespace(legacy_video_access_allowed=lambda request, video_id: True),
             "re": re,
             "video_processor": SimpleNamespace(get_video_path=lambda video_id: "/original.mp4" if video_id == "video" else None),
             "export_jobs": Jobs(),

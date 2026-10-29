@@ -5,7 +5,7 @@ import shutil
 import stat
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 import chapter_projects
 from processors import transcript_versions
 from project_paths import (
@@ -41,23 +41,29 @@ def _jobs(video_id=None):
 
 
 @router.get("/library")
-def saved_library():
+def saved_library(request: Request):
     try:
         metadata_path = VIDEO_DIR / "metadata.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.is_file() else {}
-        videos = [
-            {"video_id": path.stem, "filename": metadata.get(path.stem, {}).get("filename", path.name)}
-            for path in VIDEO_DIR.iterdir()
-            if path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".mov", ".webm", ".avi"}
-        ]
+        videos = []
+        for path in VIDEO_DIR.iterdir():
+            if (path.is_file() and path.suffix.lower() in {".mp4", ".mkv", ".mov", ".webm", ".avi"}
+                    and instructor_access(request, path.stem)):
+                videos.append({"video_id": path.stem,
+                               "filename": metadata.get(path.stem, {}).get("filename", path.name)})
         exports = [
             {"id": job["id"], "store": kind, "video_id": job["video_id"],
              "title": job["title"], "status": job["status"]}
-            for kind, job in _jobs() if kind != "projects"
+            for kind, job in _jobs() if kind != "projects" and instructor_access(request, job["video_id"])
         ]
         return {"videos": videos, "exports": exports}
     except (OSError, ValueError) as error:
         raise HTTPException(500, f"Could not read the saved library: {error}") from error
+
+
+def instructor_access(request, video_id):
+    from instructor_lms import legacy_video_access_allowed
+    return legacy_video_access_allowed(request, video_id)
 
 
 @router.delete("/library/exports/{kind}/{job_id}")

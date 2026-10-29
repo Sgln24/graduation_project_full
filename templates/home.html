@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f4f6fb">
+    <title>LectureSeek — Understand every lecture</title>
+    <script src="/static/js/theme.js"></script>
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="stylesheet" href="/static/landing.css">
+    <link rel="stylesheet" href="/static/nav-dropdown.css">
+</head>
+<body class="landing">
+    <header class="landing-header">
+        <a class="landing-brand" href="/"><span class="landing-mark">L</span>LectureSeek</a>
+        <nav class="landing-nav" aria-label="Main navigation">
+            <a href="#platform">Platform</a>
+            <details class="nav-dropdown" id="aiToolsMenu">
+                <summary>AI tools <span aria-hidden="true">▾</span></summary>
+                <div class="nav-dropdown-menu">
+                    <a href="/fusion"><b>Lecture Fusion</b><small>Merge several lectures into one study guide</small></a>
+                    <a href="/resource-finder"><b>Resource Finder</b><small>Find courses, videos and articles for a topic</small></a>
+                </div>
+            </details>
+            <a href="#for-everyone">For everyone</a>
+            <label class="theme-control">Appearance
+                <select data-theme-picker aria-label="Color theme">
+                    <option value="light">Light</option><option value="dim">Dim</option><option value="night">Night</option>
+                </select>
+            </label>
+            <a class="landing-button secondary" id="goDashboard" href="/student" hidden>My dashboard</a>
+            <button class="landing-button secondary" data-open-auth="login">Log in</button>
+            <button class="landing-button primary" data-open-auth="signup">Sign up</button>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="hero-copy">
+                <span class="hero-kicker"><span class="live-dot"></span> YOUR LECTURE, MADE CLEAR</span>
+                <h1>Turn every lecture into a <span>learning experience.</span></h1>
+                <p>Explore lecture videos with AI-powered transcripts, chapters, slide detection, and summaries. Teach courses and follow student learning in one connected space.</p>
+                <div class="hero-actions">
+                    <button class="landing-button primary large" data-open-auth="signup">Get started <span aria-hidden="true">→</span></button>
+                    <a class="landing-button secondary large" href="#platform">Explore the platform</a>
+                </div>
+                <div class="hero-trust"><span>✦</span> AI-assisted lecture insights · Instructor-reviewed publishing</div>
+            </div>
+            <div class="hero-art" aria-label="Illustration of a lecture transcript and chapter summary">
+                <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
+                <div class="art-window">
+                    <div class="art-window-top"><span class="window-dots">● ● ●</span><span>Lecture workspace</span><span class="art-chip">AI ANALYSIS</span></div>
+                    <div class="art-video"><span class="play-button">▶</span><span class="video-caption">A clear explanation, captured as it happens.</span><span class="video-time">12:48 / 38:20</span></div>
+                    <div class="art-content"><div class="art-transcript"><div class="art-tab">TRANSCRIPT <span>LIVE</span></div>
+                        <p><b>12:42</b> Let’s connect this idea to the example we saw earlier.</p>
+                        <p><b>12:55</b> Notice how the key concept changes the result.</p>
+                        <p><b>13:08</b> We can summarize this in three steps.</p></div>
+                        <div class="art-chapters"><div class="art-tab">CHAPTERS</div><div class="chapter-line selected"><i></i><span>Core concepts<small>08:16 · 4 sections</small></span></div><div class="chapter-line"><i></i><span>Worked example<small>14:32 · 3 sections</small></span></div><div class="chapter-line"><i></i><span>Key takeaways<small>23:05 · Summary</small></span></div></div></div>
+                    <div class="art-progress"><span></span></div>
+                </div>
+                <div class="floating-note note-summary"><span class="note-icon">✦</span><span><b>Lecture summary</b><small>Key ideas, ready to review</small></span></div>
+                <div class="floating-note note-slide"><span class="note-icon">▧</span><span><b>Slide detected</b><small>13:08 · Saved to your timeline</small></span></div>
+            </div>
+        </section>
+
+        <section class="feature-strip" id="platform">
+            <div><span class="feature-symbol">≋</span><b>Clear transcripts</b><small>Search, edit, translate and follow along.</small></div>
+            <div><span class="feature-symbol pink">◷</span><b>Topic chapters</b><small>Find the concept you need, faster.</small></div>
+            <div><span class="feature-symbol green">▧</span><b>Slide insights</b><small>Connect lecture speech to visual notes.</small></div>
+            <div><span class="feature-symbol orange">◇</span><b>Learning spaces</b><small>Courses, resources, quizzes and grades.</small></div>
+        </section>
+
+        <section class="audience-section" id="for-everyone">
+            <div class="section-heading"><span class="hero-kicker">ONE PLATFORM, TWO PERSPECTIVES</span><h2>Made for teaching and learning.</h2><p>Choose your space and bring your lectures into focus.</p></div>
+            <div class="audience-grid">
+                <article class="audience-card instructor-card"><div class="audience-icon">▤</div><h3>For instructors</h3><p>Organize courses, upload lecture videos, review AI-generated learning materials, and manage assessments and grades.</p><button class="text-action" data-open-auth="signup" data-role="instructor">Explore instructor space <span>→</span></button></article>
+                <article class="audience-card student-card"><div class="audience-icon">✎</div><h3>For students</h3><p>Access your enrolled courses, explore lecture transcripts and chapters, take quizzes, and follow your grades.</p><button class="text-action" data-open-auth="signup" data-role="student">Explore student space <span>→</span></button></article>
+            </div>
+        </section>
+
+        <footer class="landing-footer"><a class="landing-brand" href="/"><span class="landing-mark">L</span>LectureSeek</a><span>Understand every lecture. Keep learning.</span><button class="text-action" data-open-auth="login">Log in <span>→</span></button></footer>
+    </main>
+
+    <dialog id="authDialog" class="auth-dialog">
+        <form id="authForm">
+            <button class="dialog-close" type="button" aria-label="Close" data-close-auth>×</button>
+            <span class="hero-kicker">YOUR LEARNING SPACE</span>
+            <h2 id="authTitle">Create your account</h2>
+            <p id="authDescription">Choose your role to get started.</p>
+            <div class="role-picker" role="group" aria-label="Choose account role">
+                <button type="button" data-role-option="student" class="role-option selected"><span>✎</span><b>Student</b><small>Join courses and learn</small></button>
+                <button type="button" data-role-option="instructor" class="role-option"><span>▤</span><b>Instructor</b><small>Create and teach courses</small></button>
+            </div>
+            <label class="auth-field" id="nameField">Full name<input name="name" autocomplete="name" maxlength="120" required></label>
+            <label class="auth-field">Email address<input name="email" type="email" autocomplete="email" required></label>
+            <label class="auth-field">Password<input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></label>
+            <p class="auth-hint">Use at least 12 characters. Instructor accounts after the first are created by an existing instructor.</p>
+            <p id="authError" class="auth-error" role="alert"></p>
+            <p id="joinNotice" class="join-notice" hidden></p>
+            <button class="landing-button primary large submit-auth" id="authSubmit">Create account <span>→</span></button>
+            <p class="auth-switch"><span id="switchText">Already have an account?</span><button type="button" data-toggle-auth>Log in</button></p>
+        </form>
+    </dialog>
+    <script>
+        (function () {
+            var menu = document.getElementById('aiToolsMenu');
+            if (!menu) return;
+            document.addEventListener('click', function (e) { if (!menu.contains(e.target)) menu.open = false; });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Escape') menu.open = false; });
+        })();
+    </script>
+    <script src="/static/js/landing.js"></script>
+</body>
+</html>

@@ -64,3 +64,6 @@ results/
 test.py
 debug.txt
 static/exports/
+slidedec_lms.sqlite3
+slidedec_lms.sqlite3-shm
+slidedec_lms.sqlite3-wal

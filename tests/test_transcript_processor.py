@@ -235,6 +235,83 @@ class TranscriptProcessorReuseTests(unittest.TestCase):
                 transcript_module.TRANSCRIPTS_DIR = original_dir
                 transcript_module.transcribe_audio = original_transcribe
 
+    def test_failed_regeneration_restores_previous_transcript(self):
+        with tempfile.TemporaryDirectory() as directory:
+            original_dir = transcript_module.TRANSCRIPTS_DIR
+            original_transcribe = transcript_module.transcribe_audio
+            transcript_module.TRANSCRIPTS_DIR = Path(directory)
+            previous = [{"text": "Previously saved", "start": 0, "duration": 2}]
+            output_path = Path(directory) / "video_whisper.json"
+            backup_path = Path(directory) / "video_whisper_before_speakers.json"
+            backup_path.write_text(json.dumps(previous), encoding="utf-8")
+
+            def failed_transcription(*args, **kwargs):
+                raise RuntimeError("decoder failed")
+
+            transcript_module.transcribe_audio = failed_transcription
+            try:
+                TranscriptProcessor()._process_whisper_transcript_sync(
+                    "video", "video.mp4", str(output_path)
+                )
+
+                self.assertEqual(
+                    json.loads(output_path.read_text(encoding="utf-8")), previous
+                )
+                self.assertFalse(backup_path.exists())
+                self.assertIn(
+                    "decoder failed",
+                    (Path(directory) / "video_whisper_error.txt").read_text(
+                        encoding="utf-8"
+                    ),
+                )
+            finally:
+                transcript_module.TRANSCRIPTS_DIR = original_dir
+                transcript_module.transcribe_audio = original_transcribe
+
+    def test_previous_transcript_is_versioned_before_forced_regeneration(self):
+        class BackgroundTasks:
+            def add_task(self, function, *args, **kwargs):
+                pass
+
+        with tempfile.TemporaryDirectory() as directory:
+            original_video_dir = transcript_module.VIDEO_DIR
+            original_transcript_dir = transcript_module.TRANSCRIPTS_DIR
+            working_dir = Path(directory)
+            transcript_module.VIDEO_DIR = working_dir
+            transcript_module.TRANSCRIPTS_DIR = working_dir
+            output_path = working_dir / "video_whisper.json"
+            output_path.write_text(
+                json.dumps([{"text": "Existing transcript", "start": 0}]),
+                encoding="utf-8",
+            )
+
+            def verify_existing_transcript(video_id):
+                self.assertEqual(
+                    json.loads(output_path.read_text(encoding="utf-8"))[0]["text"],
+                    "Existing transcript",
+                )
+
+            try:
+                with mock.patch.object(
+                    transcript_module.transcript_versions,
+                    "sync_existing",
+                    side_effect=verify_existing_transcript,
+                ) as sync_existing:
+                    response = asyncio.run(
+                        TranscriptProcessor().generate_whisper_transcript(
+                            "video", BackgroundTasks(), force=True
+                        )
+                    )
+
+                self.assertTrue(response.content["success"])
+                sync_existing.assert_called_once_with("video")
+                self.assertTrue(
+                    (working_dir / "video_whisper_before_speakers.json").exists()
+                )
+            finally:
+                transcript_module.VIDEO_DIR = original_video_dir
+                transcript_module.TRANSCRIPTS_DIR = original_transcript_dir
+
     @staticmethod
     def _unexpected_transcription(*args, **kwargs):
         raise AssertionError("ASR should not run when reusing a transcript")
@@ -360,6 +437,9 @@ class TranscriptProcessorIsolationTests(unittest.IsolatedAsyncioTestCase):
             try:
                 progress_path = Path(directory) / "video_whisper_progress.txt"
                 progress_path.write_text("0", encoding="utf-8")
+                previous = [{"text": "Previously saved", "start": 0, "duration": 2}]
+                backup_path = Path(directory) / "video_whisper_before_speakers.json"
+                backup_path.write_text(json.dumps(previous), encoding="utf-8")
                 processor = TranscriptProcessor()
 
                 await processor.process_whisper_transcript(
@@ -370,6 +450,15 @@ class TranscriptProcessorIsolationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.content["status"], "error")
                 self.assertIn("exit code -9", response.content["error"])
                 self.assertFalse(progress_path.exists())
+                self.assertEqual(
+                    json.loads(
+                        (Path(directory) / "video_whisper.json").read_text(
+                            encoding="utf-8"
+                        )
+                    ),
+                    previous,
+                )
+                self.assertFalse(backup_path.exists())
             finally:
                 transcript_module.TRANSCRIPTS_DIR = original_dir
                 transcript_module.multiprocessing.get_context = original_get_context

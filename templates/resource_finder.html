@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>LectureSeek · Resource Finder</title>
+    <script src="/static/js/theme.js"></script>
+    <link rel="stylesheet" href="/static/theme.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .resource-page { max-width: 1100px; margin: 32px auto; }
+        .resource-finder-controls, .resource-finder-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 16px 0; }
+        .resource-finder-controls label, .resource-finder-filters label { flex: 1 1 220px; }
+        .resource-finder-controls input[type="text"], .resource-finder-controls input[type="file"], .resource-finder-filters select { display: block; width: 100%; }
+        .resource-finder-results { display: grid; gap: 12px; max-height: 65vh; overflow-y: auto; margin: 16px 0; }
+        .resource-result { border: 1px solid rgba(120,130,170,0.4); border-radius: 8px; padding: 14px; }
+        .resource-result h3 { margin: 0 0 6px; }
+        .resource-result p { margin: 6px 0; }
+        .resource-result-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.85em; opacity: 0.8; }
+        #resourceFinderStatus { display: block; margin: 12px 0; }
+    </style>
+</head>
+<body>
+    <main class="container">
+        <nav class="input-section" aria-label="Main navigation">
+            <a class="brand" href="/" title="LectureSeek home">
+                <span class="brand-mark" aria-hidden="true"><i class="fas fa-play"></i></span>
+                <span class="brand-name">LectureSeek</span>
+            </a>
+            <a class="btn btn-secondary" href="/">Home</a>
+            <a class="btn btn-secondary" href="/fusion">Multi-Lecture Fusion</a>
+            <a class="btn btn-secondary" href="/workspace">Lecture tools</a>
+            <label class="theme-picker-label" for="workspaceTheme">Theme</label>
+            <select id="workspaceTheme" data-theme-picker aria-label="Color theme">
+                <option value="light">Light</option>
+                <option value="dim">Dim</option>
+                <option value="night">Night</option>
+            </select>
+        </nav>
+        <section class="resource-page">
+            <h1>Resource Finder</h1>
+            <p>Discover real learning resources by topic or source document. Analysis can use a local model. Search providers receive search queries; optional Groq fallback sends analyzed text to the cloud.</p>
+            <div class="resource-finder-controls">
+                <label for="resourceTopic">Topic
+                    <input id="resourceTopic" type="text" maxlength="200" placeholder="e.g. neural networks or lecture topic">
+                </label>
+                <label for="resourceFile">Or analyze a document
+                    <input id="resourceFile" type="file" accept=".txt,.md,.docx,.pdf,.pptx">
+                </label>
+            </div>
+            <fieldset>
+                <legend>Resource types</legend>
+                <label><input type="checkbox" name="resourceType" value="video" checked> Videos</label>
+                <label><input type="checkbox" name="resourceType" value="course" checked> Courses</label>
+                <label><input type="checkbox" name="resourceType" value="paper" checked> Papers</label>
+                <label><input type="checkbox" name="resourceType" value="book" checked> Books</label>
+                <label><input type="checkbox" name="resourceType" value="website" checked> Websites</label>
+            </fieldset>
+            <div class="resource-finder-controls">
+                <label><input id="resourceUseLlm" type="checkbox" checked> Use AI for analysis and ranking</label>
+                <label><input id="resourceCloudFallback" type="checkbox" checked> Cloud fallback (Groq) if the local model is unavailable</label>
+                <button id="resourceSearchBtn" class="btn btn-primary" type="button">Find resources</button>
+            </div>
+            <div id="resourceFinderFilters" class="resource-finder-filters" hidden>
+                <label>Type<select id="resourceFilterType"><option value="">All types</option></select></label>
+                <label>Platform<select id="resourceFilterPlatform"><option value="">All platforms</option></select></label>
+                <label>Difficulty<select id="resourceFilterDifficulty"><option value="">All levels</option></select></label>
+                <label>Language<select id="resourceFilterLanguage"><option value="">All languages</option></select></label>
+            </div>
+            <small id="resourceFinderStatus" role="status" aria-live="polite"></small>
+            <div id="resourceFinderResults" class="resource-finder-results"></div>
+            <button id="resourceFinderMore" class="btn btn-secondary" type="button" hidden>Load more</button>
+        </section>
+    </main>
+    <script src="/static/js/resource-finder.js?v=20261028"></script>
+</body>
+</html>

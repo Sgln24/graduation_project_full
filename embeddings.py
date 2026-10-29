@@ -1,10 +1,18 @@
 import os
 import json
 import numpy as np
-from sentence_transformers import SentenceTransformer
-import faiss
 from typing import List, Dict, Tuple, Any, Optional, Union
 import threading
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:  # pragma: no cover - optional dependency for local embeddings
+    SentenceTransformer = None
+
+try:
+    import faiss
+except ImportError:  # pragma: no cover - optional dependency for local embeddings
+    faiss = None
 
 from project_paths import TRANSCRIPTS_DIR, SCENES_DIR
 
@@ -15,6 +23,8 @@ model_lock = threading.Lock()
 def get_model():
     """Get or initialize the sentence transformer model."""
     global model
+    if SentenceTransformer is None:
+        raise RuntimeError("sentence-transformers is not installed. Install the project requirements to enable lecture retrieval.")
     if model is None:
         with model_lock:
             if model is None:
@@ -28,10 +38,12 @@ def compute_embeddings(texts: List[str]) -> np.ndarray:
     """Compute embeddings for a list of texts."""
     if not texts:
         return np.array([])
-    
-    model = get_model()
+    try:
+        active_model = get_model()
+    except RuntimeError:
+        return np.array([])
     # Generate embeddings
-    embeddings = model.encode(texts, convert_to_tensor=False, show_progress_bar=False)
+    embeddings = active_model.encode(texts, convert_to_tensor=False, show_progress_bar=False)
     return embeddings
 
 def extract_sentences_from_transcript(transcript: List[Dict]) -> List[Dict]:
