@@ -7,9 +7,8 @@
     <title>LectureSeek · Learning space</title>
     <script src="/static/js/theme.js"></script>
     <link rel="stylesheet" href="/static/theme.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/instructor.css">
+    <link rel="stylesheet" href="/static/instructor-unify.css">
 </head>
 <body>
     <div id="authView" class="auth-shell" hidden>
@@ -41,7 +40,7 @@
         <main class="main">
             <header class="topbar">
                 <div><span class="eyebrow" id="pageKicker">LECTURESEEK LMS</span><h1 id="pageTitle">Overview</h1></div>
-                <div class="top-actions"><a class="button" id="workspaceLink" href="/workspace">Lecture tools</a><label class="theme-picker-label" for="lmsTheme">Theme</label><select id="lmsTheme" data-theme-picker aria-label="Color theme"><option value="light">Light</option><option value="dim">Dim</option><option value="night">Night</option></select><span class="status-dot">Workspace ready</span><button class="icon-button" aria-label="Notifications">◌</button></div>
+                <div class="top-actions"><nav class="top-links" aria-label="Product navigation">{% set active = "/instructor" %}{% set link_class = "button" %}{% include "_nav_links.html" %}</nav><label class="theme-picker-label" for="lmsTheme">Theme</label><select id="lmsTheme" data-theme-picker aria-label="Color theme"><option value="light">Light</option><option value="dim">Dim</option><option value="night">Night</option></select><span class="status-dot">Workspace ready</span><button class="icon-button" aria-label="Notifications">◌</button></div>
             </header>
             <div id="notice" class="notice" role="status"></div>
             <div id="content" class="content"></div>

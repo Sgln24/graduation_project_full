@@ -1,0 +1,17 @@
+<header class="app-bar">
+    <a class="app-brand" href="/" title="LectureSeek home">
+        <span class="app-brand-mark" aria-hidden="true">L</span>
+        <span>LectureSeek</span>
+    </a>
+    <nav class="app-nav" aria-label="Main navigation">
+        {% set link_class = "app-link" %}{% include "_nav_links.html" %}
+    </nav>
+    <label class="app-theme">
+        <span class="sr-only">Color theme</span>
+        <select data-theme-picker aria-label="Color theme">
+            <option value="light">Light</option>
+            <option value="dim">Dim</option>
+            <option value="night">Night</option>
+        </select>
+    </label>
+</header>

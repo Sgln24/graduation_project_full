@@ -93,10 +93,7 @@
                 <span class="brand-mark" aria-hidden="true"><i class="fas fa-play"></i></span>
                 <span class="brand-name">LectureSeek</span>
             </a>
-            <a class="btn btn-secondary" href="/">Home</a>
-            <a class="btn btn-secondary" href="/fusion">Multi-Lecture Fusion</a>
-            <a class="btn btn-secondary" href="/resource-finder">Resource Finder</a>
-            <a class="btn btn-secondary" href="/instructor">Learning space</a>
+            {% set active = "/workspace" %}{% set link_class = "btn btn-secondary" %}{% include "_nav_links.html" %}
             <label class="theme-picker-label" for="workspaceTheme">Theme</label>
             <select id="workspaceTheme" data-theme-picker aria-label="Color theme">
                 <option value="light">Light</option>

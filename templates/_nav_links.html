@@ -1,0 +1,10 @@
+{#- Single source of truth for product navigation. Set `active` (path) and `link_class` before including. -#}
+{% set _links = [
+    ("/", "Home"),
+    ("/instructor", "Learning space"),
+    ("/workspace", "Lecture tools"),
+    ("/fusion", "Lecture Fusion"),
+    ("/resource-finder", "Resource Finder"),
+] %}
+{% for href, label in _links %}<a class="{{ link_class | default('app-link') }}{% if active == href %} is-active{% endif %}" href="{{ href }}"{% if active == href %} aria-current="page"{% endif %}>{{ label }}</a>
+{% endfor %}

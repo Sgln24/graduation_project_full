@@ -7,73 +7,64 @@
     <title>LectureSeek · Resource Finder</title>
     <script src="/static/js/theme.js"></script>
     <link rel="stylesheet" href="/static/theme.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <link rel="stylesheet" href="/static/styles.css">
-    <style>
-        .resource-page { max-width: 1100px; margin: 32px auto; }
-        .resource-finder-controls, .resource-finder-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 16px 0; }
-        .resource-finder-controls label, .resource-finder-filters label { flex: 1 1 220px; }
-        .resource-finder-controls input[type="text"], .resource-finder-controls input[type="file"], .resource-finder-filters select { display: block; width: 100%; }
-        .resource-finder-results { display: grid; gap: 12px; max-height: 65vh; overflow-y: auto; margin: 16px 0; }
-        .resource-result { border: 1px solid rgba(120,130,170,0.4); border-radius: 8px; padding: 14px; }
-        .resource-result h3 { margin: 0 0 6px; }
-        .resource-result p { margin: 6px 0; }
-        .resource-result-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 0.85em; opacity: 0.8; }
-        #resourceFinderStatus { display: block; margin: 12px 0; }
-    </style>
+    <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
-    <main class="container">
-        <nav class="input-section" aria-label="Main navigation">
-            <a class="brand" href="/" title="LectureSeek home">
-                <span class="brand-mark" aria-hidden="true"><i class="fas fa-play"></i></span>
-                <span class="brand-name">LectureSeek</span>
-            </a>
-            <a class="btn btn-secondary" href="/">Home</a>
-            <a class="btn btn-secondary" href="/fusion">Multi-Lecture Fusion</a>
-            <a class="btn btn-secondary" href="/workspace">Lecture tools</a>
-            <label class="theme-picker-label" for="workspaceTheme">Theme</label>
-            <select id="workspaceTheme" data-theme-picker aria-label="Color theme">
-                <option value="light">Light</option>
-                <option value="dim">Dim</option>
-                <option value="night">Night</option>
-            </select>
-        </nav>
-        <section class="resource-page">
+<body class="app-page">
+    {% set active = "/resource-finder" %}{% include "_app_bar.html" %}
+    <main class="page">
+        <header class="page-header">
+            <span class="eyebrow">AI tools</span>
             <h1>Resource Finder</h1>
-            <p>Discover real learning resources by topic or source document. Analysis can use a local model. Search providers receive search queries; optional Groq fallback sends analyzed text to the cloud.</p>
-            <div class="resource-finder-controls">
-                <label for="resourceTopic">Topic
-                    <input id="resourceTopic" type="text" maxlength="200" placeholder="e.g. neural networks or lecture topic">
+            <p>Find real videos, courses, papers, books and websites for a topic or an uploaded document, ranked by relevance.</p>
+        </header>
+
+        <section class="card" aria-labelledby="resourceSearchTitle">
+            <h2 id="resourceSearchTitle">Search</h2>
+            <div class="field-row">
+                <label class="field" for="resourceTopic">Topic
+                    <input id="resourceTopic" type="text" maxlength="200" placeholder="e.g. neural networks, or a lecture topic">
                 </label>
-                <label for="resourceFile">Or analyze a document
+                <label class="field" for="resourceFile">Or analyze a document
                     <input id="resourceFile" type="file" accept=".txt,.md,.docx,.pdf,.pptx">
                 </label>
             </div>
-            <fieldset>
+            <fieldset class="field" style="border:0;padding:0;margin:0 0 14px">
                 <legend>Resource types</legend>
-                <label><input type="checkbox" name="resourceType" value="video" checked> Videos</label>
-                <label><input type="checkbox" name="resourceType" value="course" checked> Courses</label>
-                <label><input type="checkbox" name="resourceType" value="paper" checked> Papers</label>
-                <label><input type="checkbox" name="resourceType" value="book" checked> Books</label>
-                <label><input type="checkbox" name="resourceType" value="website" checked> Websites</label>
+                <div class="chip-group">
+                    <label class="check"><input type="checkbox" name="resourceType" value="video" checked> Videos</label>
+                    <label class="check"><input type="checkbox" name="resourceType" value="course" checked> Courses</label>
+                    <label class="check"><input type="checkbox" name="resourceType" value="paper" checked> Papers</label>
+                    <label class="check"><input type="checkbox" name="resourceType" value="book" checked> Books</label>
+                    <label class="check"><input type="checkbox" name="resourceType" value="website" checked> Websites</label>
+                </div>
             </fieldset>
-            <div class="resource-finder-controls">
-                <label><input id="resourceUseLlm" type="checkbox" checked> Use AI for analysis and ranking</label>
-                <label><input id="resourceCloudFallback" type="checkbox" checked> Cloud fallback (Groq) if the local model is unavailable</label>
+            <label class="check"><input id="resourceUseLlm" type="checkbox" checked> <span>Use AI for analysis and ranking</span></label>
+            <label class="check" for="resourceCloudFallback">
+                <input id="resourceCloudFallback" type="checkbox" checked>
+                <span>Cloud fallback (Groq)
+                    <small>Used only if the local model is unavailable; analyzed text is sent to Groq. Search providers always receive your search query.</small>
+                </span>
+            </label>
+            <div class="actions">
                 <button id="resourceSearchBtn" class="btn btn-primary" type="button">Find resources</button>
             </div>
-            <div id="resourceFinderFilters" class="resource-finder-filters" hidden>
-                <label>Type<select id="resourceFilterType"><option value="">All types</option></select></label>
-                <label>Platform<select id="resourceFilterPlatform"><option value="">All platforms</option></select></label>
-                <label>Difficulty<select id="resourceFilterDifficulty"><option value="">All levels</option></select></label>
-                <label>Language<select id="resourceFilterLanguage"><option value="">All languages</option></select></label>
-            </div>
-            <small id="resourceFinderStatus" role="status" aria-live="polite"></small>
-            <div id="resourceFinderResults" class="resource-finder-results"></div>
-            <button id="resourceFinderMore" class="btn btn-secondary" type="button" hidden>Load more</button>
         </section>
+
+        <div id="resourceFinderStatus" class="status" role="status" aria-live="polite"></div>
+        <div id="resourceFinderAlert" class="alert alert-info" role="alert"></div>
+
+        <div id="resourceFinderFilters" class="card" hidden>
+            <div class="field-row">
+                <label class="field">Type<select id="resourceFilterType"><option value="">All types</option></select></label>
+                <label class="field">Platform<select id="resourceFilterPlatform"><option value="">All platforms</option></select></label>
+                <label class="field">Difficulty<select id="resourceFilterDifficulty"><option value="">All levels</option></select></label>
+                <label class="field">Language<select id="resourceFilterLanguage"><option value="">All languages</option></select></label>
+            </div>
+        </div>
+        <div id="resourceFinderResults" class="result-grid"></div>
+        <div class="actions"><button id="resourceFinderMore" class="btn btn-secondary" type="button" hidden>Load more</button></div>
     </main>
-    <script src="/static/js/resource-finder.js?v=20261028"></script>
+    <script src="/static/js/app-ui.js"></script>
+    <script src="/static/js/resource-finder.js?v=20261029"></script>
 </body>
 </html>

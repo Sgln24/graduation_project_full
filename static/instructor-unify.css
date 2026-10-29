@@ -1,0 +1,9 @@
+/*
+ * Aligns the Learning space (instructor.css, written separately) with the shared product look:
+ * one typeface family (the theme's --font-sans) and the shared product navigation in the top bar.
+ */
+.app-shell, .app-shell *, .auth-shell, .auth-shell * { font-family: var(--font-sans) !important; }
+.top-links { display: flex; flex-wrap: wrap; gap: 6px; }
+.top-links .button { padding: 7px 11px; font-size: 12px; }
+.top-links .button.is-active { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
+@media (max-width: 900px) { .top-links { display: none; } }

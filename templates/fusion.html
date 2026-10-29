@@ -4,52 +4,50 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
-    <title>LectureSeek · Multi-Lecture Fusion</title>
+    <title>LectureSeek · Lecture Fusion</title>
     <script src="/static/js/theme.js"></script>
     <link rel="stylesheet" href="/static/theme.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <link rel="stylesheet" href="/static/styles.css">
-    <style>
-        .fusion-page { max-width: 1000px; margin: 32px auto; }
-        .fusion-page fieldset { margin: 18px 0; }
-        .fusion-page #fusionVideos label { display: block; margin: 8px 0; }
-        #fusionRuntime, #fusionStatus { display: block; margin: 12px 0; }
-        #fusionResult { margin-top: 20px; }
-    </style>
+    <link rel="stylesheet" href="/static/app.css">
 </head>
-<body>
-    <main class="container">
-        <nav class="input-section" aria-label="Main navigation">
-            <a class="brand" href="/" title="LectureSeek home">
-                <span class="brand-mark" aria-hidden="true"><i class="fas fa-play"></i></span>
-                <span class="brand-name">LectureSeek</span>
-            </a>
-            <a class="btn btn-secondary" href="/">Home</a>
-            <a class="btn btn-secondary" href="/resource-finder">Resource Finder</a>
-            <a class="btn btn-secondary" href="/workspace">Lecture tools</a>
-            <label class="theme-picker-label" for="workspaceTheme">Theme</label>
-            <select id="workspaceTheme" data-theme-picker aria-label="Color theme">
-                <option value="light">Light</option>
-                <option value="dim">Dim</option>
-                <option value="night">Night</option>
-            </select>
-        </nav>
-        <section class="fusion-page">
-            <h1>Multi-Lecture Fusion</h1>
-            <p>Combine up to five saved lectures and source documents into a synthesized lecture, slide deck, and PDF. Fusion uses a local Ollama model first; if you allow cloud fallback and Ollama is unavailable, excerpts of your source text are sent to Groq.</p>
-            <small id="fusionRuntime" role="status"></small>
-            <label style="display:flex; align-items:center; gap:6px;"><input id="fusionCloud" type="checkbox" checked>Allow cloud fallback (Groq) when the local model is unavailable</label>
-            <fieldset>
-                <legend>Saved lectures (maximum 5)</legend>
-                <div id="fusionVideos" aria-live="polite"></div>
+<body class="app-page">
+    {% set active = "/fusion" %}{% include "_app_bar.html" %}
+    <main class="page">
+        <header class="page-header">
+            <span class="eyebrow">AI tools</span>
+            <h1>Lecture Fusion</h1>
+            <p>Combine up to five saved lectures and source documents into one synthesized lecture with a slide deck and PDF.</p>
+        </header>
+
+        <div id="fusionRuntime" class="alert alert-info" role="status" aria-live="polite"></div>
+
+        <section class="card" aria-labelledby="fusionSourcesTitle">
+            <h2 id="fusionSourcesTitle">1. Choose sources</h2>
+            <fieldset class="field" style="border:0;padding:0;margin:0 0 14px">
+                <legend>Saved lectures <span class="field-hint">(maximum 5)</span></legend>
+                <div id="fusionVideos" class="option-list" aria-live="polite"></div>
             </fieldset>
-            <label for="fusionFiles">Source documents (.txt, .md, .docx, .pdf, .pptx; 20 MB total)</label>
-            <input id="fusionFiles" type="file" multiple accept=".txt,.md,.docx,.pdf,.pptx">
-            <p><button id="fusionRunBtn" class="btn btn-primary" type="button">Create fused lecture</button></p>
-            <small id="fusionStatus" role="status" aria-live="polite"></small>
+            <label class="field" for="fusionFiles">Source documents
+                <input id="fusionFiles" type="file" multiple accept=".txt,.md,.docx,.pdf,.pptx">
+                <span class="field-hint">.txt, .md, .docx, .pdf or .pptx · 20 MB total</span>
+            </label>
+        </section>
+
+        <section class="card" aria-labelledby="fusionRunTitle">
+            <h2 id="fusionRunTitle">2. Create the fused lecture</h2>
+            <label class="check" for="fusionCloud">
+                <input id="fusionCloud" type="checkbox" checked>
+                <span>Cloud fallback (Groq)
+                    <small>Local Ollama is used first. Only if it is unavailable are excerpts of your sources sent to Groq (needs <code>GROQ_API_KEY</code>).</small>
+                </span>
+            </label>
+            <div class="actions">
+                <button id="fusionRunBtn" class="btn btn-primary" type="button">Create fused lecture</button>
+            </div>
+            <div id="fusionStatus" class="status" role="status" aria-live="polite"></div>
             <div id="fusionResult"></div>
         </section>
     </main>
-    <script src="/static/js/fusion.js?v=20261028"></script>
+    <script src="/static/js/app-ui.js"></script>
+    <script src="/static/js/fusion.js?v=20261029"></script>
 </body>
 </html>

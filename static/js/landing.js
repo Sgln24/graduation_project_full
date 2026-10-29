@@ -3,7 +3,12 @@ const form = document.querySelector('#authForm');
 const roles = [...document.querySelectorAll('[data-role-option]')];
 let mode = 'signup';
 let role = 'student';
-const inviteToken = new URLSearchParams(window.location.search).get('join');
+const params = new URLSearchParams(window.location.search);
+const inviteToken = params.get('join');
+const nextPath = (() => {
+    const value = params.get('next') || '';
+    return value.startsWith('/') && !value.startsWith('//') ? value : '';
+})();
 
 function setRole(value) {
     role = value;
@@ -53,6 +58,12 @@ if (inviteToken) {
     dialog.showModal();
 }
 
+if (params.get('login') && !inviteToken) {
+    setMode('login');
+    document.querySelector('#authDescription').textContent = 'Log in to continue — this tool is available to signed-in users.';
+    dialog.showModal();
+}
+
 async function api(path, body) {
     const response = await fetch(path, {
         method: 'POST',
@@ -83,7 +94,7 @@ form.addEventListener('submit', async (event) => {
             const enrollment = await api(`/api/lms/enrollments/by-link/${encodeURIComponent(inviteToken)}`, {});
             document.querySelector('#joinNotice').textContent = `Enrolled in ${enrollment.course_title}. Opening your student dashboard…`;
         }
-        window.location.assign(result.user.role === 'instructor' ? '/instructor' : '/student');
+        window.location.assign(nextPath || (result.user.role === 'instructor' ? '/instructor' : '/student'));
     } catch (error) {
         errorElement.textContent = error.message;
     } finally {

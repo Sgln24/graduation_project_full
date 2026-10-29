@@ -2,6 +2,7 @@
     const $ = (id) => document.getElementById(id);
     const results = $('resourceFinderResults');
     const status = $('resourceFinderStatus');
+    const alertBox = $('resourceFinderAlert');
     const filters = $('resourceFinderFilters');
     let searchId = '';
     let nextOffset = 0;
@@ -41,7 +42,7 @@
     }
 
     function renderResource(resource) {
-        const card = el('article', undefined, 'resource-result');
+        const card = el('article', undefined, 'result-card');
         const heading = el('h3');
         const link = el('a', resource.title || 'Untitled resource');
         link.href = resource.url;
@@ -52,25 +53,38 @@
         if (resource.description) card.appendChild(el('p', resource.description));
         if (resource.explanation) card.appendChild(el('p', resource.explanation));
 
-        const metadata = el('div', undefined, 'resource-result-meta');
+        const metadata = el('div', undefined, 'tag-row');
         [
             resource.type,
             resource.platform,
             resource.difficulty,
             resource.language,
             resource.published,
-            Number.isFinite(resource.score) ? `Relevance ${Math.round(resource.score * 100)}%` : '',
-        ].filter(Boolean).forEach((item) => metadata.appendChild(el('span', item)));
+        ].filter(Boolean).forEach((item) => metadata.appendChild(el('span', item, 'tag')));
+        if (Number.isFinite(resource.score)) metadata.appendChild(el('span', `Relevance ${Math.round(resource.score * 100)}%`, 'tag tag-brand'));
         card.appendChild(metadata);
         if (resource.covered_concepts?.length) {
-            card.appendChild(el('small', `Topics: ${resource.covered_concepts.join(', ')}`));
+            card.appendChild(el('p', `Topics: ${resource.covered_concepts.join(', ')}`));
         }
         return card;
+    }
+
+    function setStatus(text, busy) {
+        status.textContent = text || '';
+        status.classList.toggle('is-busy', Boolean(busy && text));
+    }
+
+    function setAlert(text, kind) {
+        alertBox.textContent = text || '';
+        alertBox.className = 'alert alert-' + (kind || 'info');
     }
 
     function renderPage(payload, append) {
         if (!append) results.replaceChildren();
         payload.results.forEach((resource) => results.appendChild(renderResource(resource)));
+        if (!payload.results.length && !append) {
+            results.appendChild(el('div', 'No resources matched. Try a broader topic or other filters.', 'empty-state'));
+        }
         nextOffset = payload.offset + payload.results.length;
         total = payload.total;
         $('resourceFinderMore').hidden = !payload.has_more;
@@ -78,8 +92,9 @@
         const parts = [`Showing ${Math.min(nextOffset, total)} of ${total} matching resources.`];
         if (payload.analysis?.topic) parts.push(`Topic: ${payload.analysis.topic}.`);
         if (payload.ranking_method) parts.push(`Ranking: ${payload.ranking_method}.`);
-        [...(payload.notices || []), ...(payload.warnings || [])].forEach((notice) => parts.push(notice));
-        status.textContent = parts.join(' ');
+        setStatus(parts.join(' '));
+        const notices = [...(payload.notices || []), ...(payload.warnings || [])];
+        setAlert(notices.join(' '), 'warn');
         updateFilters(payload.facets);
     }
 
@@ -93,7 +108,7 @@
         if (!searchId || loading) return;
         loading = true;
         $('resourceFinderMore').disabled = true;
-        if (!append) status.textContent = 'Loading resources...';
+        if (!append) setStatus('Loading resources…', true);
         try {
             const params = new URLSearchParams({ offset: append ? String(nextOffset) : '0' });
             Object.entries(selectedFilters()).forEach(([key, value]) => {
@@ -102,7 +117,8 @@
             const response = await fetch(`/resource_finder/${encodeURIComponent(searchId)}?${params}`);
             renderPage(await readResponse(response), append);
         } catch (error) {
-            status.textContent = error.message;
+            setStatus('');
+            setAlert(error.message, 'error');
         } finally {
             loading = false;
             $('resourceFinderMore').disabled = false;
@@ -113,7 +129,8 @@
         const file = $('resourceFile').files[0];
         const topic = $('resourceTopic').value.trim();
         if (!topic && !file) {
-            status.textContent = 'Enter a topic or choose a source document.';
+            setStatus('');
+            setAlert('Enter a topic or choose a source document.', 'warn');
             return;
         }
 
@@ -130,14 +147,17 @@
         filters.hidden = true;
         $('resourceFinderMore').hidden = true;
         $('resourceSearchBtn').disabled = true;
-        status.textContent = 'Analyzing the topic and searching learning providers...';
+        status.textContent = '';
+        setAlert('');
+        setStatus('Analyzing the topic and searching learning providers…', true);
         try {
             const response = await fetch('/resource_finder/search', { method: 'POST', body: form });
             const payload = await readResponse(response);
             searchId = payload.search_id;
             renderPage(payload, false);
         } catch (error) {
-            status.textContent = error.message;
+            setStatus('');
+            setAlert(error.message, 'error');
         } finally {
             $('resourceSearchBtn').disabled = false;
         }

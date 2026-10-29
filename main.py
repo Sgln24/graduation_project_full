@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import os
 import json
+from urllib.parse import quote
 import copy
 import logging
 import hashlib
@@ -683,46 +684,33 @@ async def root(request: Request):
     })
 
 
-@app.get("/workspace", response_class=HTMLResponse)
-async def lecture_workspace(request: Request):
+def _authenticated_page(request: Request, template_name: str):
+    """Render a signed-in page; visitors without a session are sent to the sign-in dialog and back."""
     try:
         instructor_lms.current_user(request)
     except HTTPException as error:
         if error.status_code == 401:
-            return RedirectResponse("/", status_code=303)
+            return RedirectResponse(f"/?login=1&next={quote(request.url.path)}", status_code=303)
         raise
-    response = templates.TemplateResponse(request=request, name="index.html")
+    response = templates.TemplateResponse(request=request, name=template_name)
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     return response
+
+
+@app.get("/workspace", response_class=HTMLResponse)
+async def lecture_workspace(request: Request):
+    return _authenticated_page(request, "index.html")
 
 
 @app.get("/fusion", response_class=HTMLResponse)
 async def fusion_workspace(request: Request):
-    try:
-        instructor_lms.current_user(request)
-    except HTTPException as error:
-        if error.status_code == 401:
-            return RedirectResponse("/", status_code=303)
-        raise
-    response = templates.TemplateResponse(request=request, name="fusion.html")
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    return response
+    return _authenticated_page(request, "fusion.html")
 
 
 @app.get("/resource-finder", response_class=HTMLResponse)
 async def resource_finder_workspace(request: Request):
-    try:
-        instructor_lms.current_user(request)
-    except HTTPException as error:
-        if error.status_code == 401:
-            return RedirectResponse("/", status_code=303)
-        raise
-    response = templates.TemplateResponse(request=request, name="resource_finder.html")
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"] = "no-cache"
-    return response
+    return _authenticated_page(request, "resource_finder.html")
 
 
 @app.post("/upload_video")

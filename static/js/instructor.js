@@ -69,7 +69,6 @@ async function boot() {
         }
         $('#authView').hidden = true;
         $('#appView').hidden = false;
-        $('#workspaceLink').href = '/workspace';
         renderNav();
         await navigate(user.role === 'student' ? 'dashboard' : 'dashboard');
     } catch (error) {
